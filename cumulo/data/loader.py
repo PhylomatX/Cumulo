@@ -1,10 +1,13 @@
 import glob
 import numpy as np
 import os
-
+from absl import app
+from absl import flags
 import netCDF4 as nc4
-
 from torch.utils.data import Dataset
+
+flags.DEFINE_string('data_path', None, help='The dataset directory.')
+FLAGS = flags.FLAGS
 
 radiances = ['ev_250_aggr1km_refsb_1', 'ev_250_aggr1km_refsb_2', 'ev_1km_emissive_29', 'ev_1km_emissive_33',
              'ev_1km_emissive_34', 'ev_1km_emissive_35', 'ev_1km_emissive_36', 'ev_1km_refsb_26', 'ev_1km_emissive_27',
@@ -139,12 +142,20 @@ class CumuloDataset(Dataset):
         return 'CUMULO'
 
 
-if __name__ == "__main__":
-
+def main(_):
     # try loading precomputed 3x3 tiles
-    load_path = "../DATA/npz/label/"
+    load_path = FLAGS.data_path
 
-    dataset = CumuloDataset(load_path, ext="npz")
+    dataset = CumuloDataset(load_path, ext="npz", label_preproc=None)
+
+    import ipdb
+    ipdb.set_trace()
 
     for instance in dataset:
         filename, radiances, properties, rois, labels = instance
+
+
+if __name__ == '__main__':
+    app.run(main)
+
+

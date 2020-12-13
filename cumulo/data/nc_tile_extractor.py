@@ -1,7 +1,4 @@
 import numpy as np
-import os
-import random
-from tqdm import tqdm
 
 MAX_WIDTH, MAX_HEIGHT = 1354, 2030
 
@@ -183,48 +180,3 @@ def sample_labelled_and_unlabelled_tiles(swath_tuple, cloud_mask, label_mask, ti
                                                                             number_of_labels, tile_size)
 
     return labelled_tiles, unlabelled_tiles, labelled_positions, unlabelled_positions
-
-
-if __name__ == "__main__":
-
-    import glob
-    import os
-
-    from nc_loader import read_nc
-
-    nc_dir = "../../DATA/nc/"
-    save_dir = "../../DATA/npz/"
-
-    for dr in [os.path.join(save_dir, "label"), os.path.join(save_dir, "unlabel")]:
-        if not os.path.exists(dr):
-            os.makedirs(dr)
-
-    file_paths = glob.glob(os.path.join(nc_dir, "*.nc"))
-
-    if len(file_paths) == 0:
-        raise FileNotFoundError("no nc files in", nc_dir)
-
-    for ix, filename in enumerate(file_paths):
-
-        if ix < 109:
-            continue
-
-        radiances, properties, cloud_mask, labels = read_nc(filename)
-        label_mask = get_label_mask(labels)
-
-        labelled_tiles, unlabelled_tiles, labelled_positions, unlabelled_positions = sample_labelled_and_unlabelled_tiles(
-            (radiances, properties, cloud_mask, labels), cloud_mask[0], label_mask[0])
-        if labelled_tiles is None:
-            continue
-
-        name = os.path.basename(filename).replace(".nc", "")
-
-        save_name = os.path.join(save_dir, "label", name)
-        np.savez_compressed(save_name, radiances=labelled_tiles[0].data, properties=labelled_tiles[1].data,
-                            cloud_mask=labelled_tiles[2].data, labels=labelled_tiles[3].data,
-                            location=labelled_positions)
-
-        save_name = os.path.join(save_dir, "unlabel", name)
-        np.savez_compressed(save_name, radiances=unlabelled_tiles[0].data, properties=unlabelled_tiles[1].data,
-                            cloud_mask=unlabelled_tiles[2].data, labels=unlabelled_tiles[3].data,
-                            location=unlabelled_positions)
