@@ -1,4 +1,5 @@
 import numpy as np
+import random
 
 MAX_WIDTH, MAX_HEIGHT = 1354, 2030
 
@@ -16,17 +17,17 @@ def get_tile_offsets(tile_size):
 
 
 def get_sampling_mask(mask_shape=(MAX_HEIGHT, MAX_WIDTH), tile_size=3):
-    """ returns a mask of allowed centers for the tiles to be sampled. The center of an even size tile is considered to be the point at the position (size // 2 + 1, size // 2 + 1) within the tile.
+    """
+    Returns a mask of allowed centers for the tiles to be sampled. Excludes all points within
+    a tile_size offset from the border regions.
     """
     mask = np.ones(mask_shape, dtype=np.uint8)
 
-    offset, offset_2 = get_tile_offsets(tile_size)
-
     # must not sample tile centers in the borders, so that tiles keep to required shape
-    mask[:, :offset] = 0
-    mask[:, -offset_2:] = 0
-    mask[:offset, :] = 0
-    mask[-offset_2:, :] = 0
+    mask[:, :tile_size] = 0
+    mask[:, -tile_size:] = 0
+    mask[:tile_size, :] = 0
+    mask[-tile_size:, :] = 0
 
     return mask
 
@@ -152,6 +153,58 @@ def extract_cloudy_labelled_tiles(swath_tuple, cloud_mask, label_mask, tile_size
         positions.append(tile_position)
         for i, a in enumerate(swath_tuple):
             tiles[i].append(a[:, w1:w2, h1:h2])
+
+    positions = np.stack(positions)
+    for i, t in enumerate(tiles):
+        tiles[i] = np.stack(t)
+
+    return tiles, positions
+
+
+def sample_random_tiles_from_track(radiances, properties, cloud_mask, labels, tile_size=32, redundancy=1):
+    # sampling tiles from border region is not allowed
+    allowed_pixels = get_sampling_mask((MAX_WIDTH, MAX_HEIGHT), tile_size)
+    # get pixels along satellite track
+    label_mask = get_label_mask(labels)
+    potential_pixels = allowed_pixels & label_mask
+    potential_pixels_idx = np.array(list(zip(*np.where(potential_pixels[0] == 1))))
+
+    if len(potential_pixels_idx) == 0:
+        return None, None
+
+    last_center = None
+    not_used = 0
+    mask = np.ones(len(potential_pixels_idx)).astype(np.bool)
+    for ix, center in enumerate(potential_pixels_idx):
+        if last_center is None:
+            last_center = center
+        else:
+            if np.sqrt(np.sum((center - last_center)**2)) < tile_size:
+                not_used += 1
+                mask[ix] = False
+            else:
+                last_center = center
+
+    print(f'Used: {len(potential_pixels_idx)-not_used}. Total: {len(potential_pixels_idx)}')
+
+    potential_pixels_idx = potential_pixels_idx[mask]
+    potential_pixels_idx_orig = potential_pixels_idx
+
+    for i in range(redundancy-1):
+        potential_pixels_idx = np.vstack((potential_pixels_idx, potential_pixels_idx_orig))
+    random_offsets = np.random.randint(-(tile_size // 2) + 1, (tile_size // 2) - 1, potential_pixels_idx.shape)
+    potential_pixels_idx += random_offsets
+    offset, offset_2 = get_tile_offsets(tile_size)
+    swath_tuple = (radiances, properties, cloud_mask, labels)
+    positions, tiles = [], [[] for _ in swath_tuple]
+    for center in potential_pixels_idx:
+        ll = center - offset
+        ur = center + offset_2 + 1
+        tile_position = ((ll[0], ur[0]), (ll[1], ur[1]))
+
+        positions.append(tile_position)
+        for i, a in enumerate(swath_tuple):
+            tiles[i].append(a[:, ll[0]:ur[0], ll[1]:ur[1]])
 
     positions = np.stack(positions)
     for i, t in enumerate(tiles):

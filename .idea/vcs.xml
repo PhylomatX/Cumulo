@@ -3,5 +3,6 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/../Cumulo_orig" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../WeaklySupervised" vcs="Git" />
   </component>
 </project>

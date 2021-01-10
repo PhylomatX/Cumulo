@@ -31,7 +31,7 @@ batch_size = 256  # number of tiles per batch
 lr = 0.001
 weight_decay = 5e-4
 
-root_dir = os.path.join("../DATA/npz/")
+root_dir = os.path.join("/home/john/Projekte/BAP/Data/Cumulo/npz_small_random/128/")
 
 torch.manual_seed(1234)
 torch.cuda.manual_seed(1234)
@@ -84,8 +84,8 @@ except:
     print("Computing dataset mean, standard deviation and class ratios")
 
     dataset = CumuloDataset(os.path.join(root_dir, "label/"))  # change to unlabelled dir
-    class_weights, m, s = get_dataset_statistics(dataset, nb_classes, collate=tile_collate, batch_size=40,
-                                                 use_cuda=use_cuda)
+    class_weights, m, s = get_dataset_statistics(dataset, nb_classes, batch_size=40, collate=tile_collate,
+                                                 device='cuda')
 
     np.save(os.path.join(save_dir, "class-weights.npy"), class_weights)
     np.save(os.path.join(save_dir, "mean.npy"), m)

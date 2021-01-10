@@ -4,21 +4,44 @@ from absl import app
 from absl import flags
 import numpy as np
 from cumulo.data.nc_loader import read_nc
-from cumulo.data.nc_tile_extractor import get_label_mask, sample_labelled_and_unlabelled_tiles, extract_cloudy_labelled_tiles
+from cumulo.data.nc_tile_extractor import sample_random_tiles_from_track
 
 flags.DEFINE_string('nc_path', None, help='The dataset directory.')
 flags.DEFINE_string('npz_path', None, help='Directory where tiles should be saved.')
 flags.DEFINE_integer('size', 3, help='Tile size.')
+flags.DEFINE_integer('redundancy', 1, help='How many tiles should get extracted at each position?')
 FLAGS = flags.FLAGS
+
+
+def get_most_frequent_label(labels):
+    """ labels should be of size (nb_instances, ...).
+
+        Returns the most frequent label for each whole instance.
+    """
+
+    labels = labels.squeeze()
+    mask = np.any(labels != -1, axis=2)
+    lpixels = labels[mask]
+
+    rpixels = np.zeros(len(lpixels))
+
+    for ix, lpixel in enumerate(lpixels):
+        occ = np.zeros(8)
+        uniques, counts = np.unique(lpixel, return_counts=True)
+        for v, c in zip(uniques, counts):
+            if v != -1:
+                occ[v] = c
+        rpixels[ix] = np.argmax(occ).astype(float)
+
+    labels_flat = np.ones_like(labels[..., 0]) * -1
+    labels_flat[mask] = rpixels
+
+    return labels_flat
 
 
 def main(_):
     nc_dir = FLAGS.nc_path
     save_dir = FLAGS.npz_path
-
-    # for dr in [os.path.join(save_dir, "label"), os.path.join(save_dir, "unlabel")]:
-    #     if not os.path.exists(dr):
-    #         os.makedirs(dr)
 
     file_paths = glob.glob(os.path.join(nc_dir, "*.nc"))
 
@@ -27,30 +50,22 @@ def main(_):
 
     for ix, filename in enumerate(file_paths):
         radiances, properties, cloud_mask, labels = read_nc(filename)
-        label_mask = get_label_mask(labels)
+        tiles, positions = sample_random_tiles_from_track(radiances, properties, cloud_mask, labels,
+                                                          tile_size=FLAGS.size, redundancy=FLAGS.redundancy)
 
-        # labelled_tiles, unlabelled_tiles, labelled_positions, unlabelled_positions = sample_labelled_and_unlabelled_tiles(
-        #     (radiances, properties, cloud_mask, labels), cloud_mask[0], label_mask[0], tile_size=FLAGS.size)
-
-        labelled_tiles, labelled_positions = extract_cloudy_labelled_tiles((radiances, properties, cloud_mask, labels),
-                                                                           cloud_mask[0], label_mask[0], tile_size=FLAGS.size)
-
-        if labelled_tiles is None:
+        if tiles is None:
             continue
 
         name = os.path.basename(filename).replace(".nc", "") + f'_{FLAGS.size}'
 
-        print(labelled_tiles[0].shape)
-
         save_name = os.path.join(save_dir, name)
-        np.savez_compressed(save_name, radiances=labelled_tiles[0].data, properties=labelled_tiles[1].data,
-                            cloud_mask=labelled_tiles[2].data, labels=labelled_tiles[3].data,
-                            location=labelled_positions)
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
-        # save_name = os.path.join(save_dir, "unlabel", name)
-        # np.savez_compressed(save_name, radiances=unlabelled_tiles[0].data, properties=unlabelled_tiles[1].data,
-        #                     cloud_mask=unlabelled_tiles[2].data, labels=unlabelled_tiles[3].data,
-        #                     location=unlabelled_positions)
+        for tile in range(tiles[0].shape[0]):
+            np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=tiles[3].data[tile].squeeze()[..., 0].astype(float))
+            # np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], properties=tiles[1].data[tile],
+            #          cloud_mask=tiles[2].data[tile], labels=tiles[3].data[tile], location=positions[tile])
 
 
 if __name__ == '__main__':

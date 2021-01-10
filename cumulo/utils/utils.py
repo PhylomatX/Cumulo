@@ -43,49 +43,34 @@ def make_directory(dir_path):
         os.makedirs(dir_path)
 
 
-def get_dataset_statistics(dataset, nb_classes, batch_size, collate, use_cuda=True, tile_size=9):
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=8,
-                                             collate_fn=collate)
+def get_dataset_statistics(dataset, nb_classes, batch_size, device='cuda', tile_size=9):
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
     weights = np.zeros(nb_classes)
     sum_x = torch.zeros(13)
     std = torch.zeros(1, 13, 1, 1)
-
-    if use_cuda:
-        sum_x = sum_x.cuda()
-        std = std.cuda()
-
+    sum_x = sum_x.to(device)
+    std = std.to(device)
     nb_tiles = 0
+
     for tiles, labels in dataloader:
-
         nb_tiles += len(tiles)
-
-        if use_cuda:
-            tiles = tiles.cuda()
-
+        tiles = tiles.to(device)
         # class weights
         weights += np.histogram(labels, bins=range(nb_classes + 1), normed=False)[0]
-
         sum_x += torch.sum(tiles, (0, 2, 3))
 
     nb_pixels = nb_tiles * tile_size
     m = (sum_x / nb_pixels).reshape(1, 13, 1, 1)
 
     for tiles, _ in dataloader:
-
-        if use_cuda:
-            tiles = tiles.cuda()
-
+        tiles = tiles.to(device)
         std += torch.sum((tiles - m).pow(2), (0, 2, 3), keepdim=True)
 
     s = ((std / nb_pixels) ** 0.5)
-
     weights /= np.sum(weights)
     weights = 1 / (np.log(1.02 + weights))
-
-    if use_cuda:
-        m = m.cpu()
-        s = s.cpu()
-
+    m = m.cpu()
+    s = s.cpu()
     return weights / np.sum(weights), m.reshape(13, 1, 1).numpy(), s.reshape(13, 1, 1).numpy()
 
 

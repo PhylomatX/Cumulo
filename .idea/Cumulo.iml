@@ -5,6 +5,8 @@
     <orderEntry type="jdk" jdkName="Python 3.6 (cumulo)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="Cumulo_orig" />
+    <orderEntry type="module" module-name="DeepCFD" />
+    <orderEntry type="module" module-name="WeaklySupervised" />
   </component>
   <component name="PyDocumentationSettings">
     <option name="format" value="GOOGLE" />

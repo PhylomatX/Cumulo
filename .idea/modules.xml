@@ -4,6 +4,8 @@
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/Cumulo.iml" filepath="$PROJECT_DIR$/.idea/Cumulo.iml" />
       <module fileurl="file://$PROJECT_DIR$/../Cumulo_orig/.idea/Cumulo_orig.iml" filepath="$PROJECT_DIR$/../Cumulo_orig/.idea/Cumulo_orig.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../DeepCFD/.idea/DeepCFD.iml" filepath="$PROJECT_DIR$/../DeepCFD/.idea/DeepCFD.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../WeaklySupervised/.idea/WeaklySupervised.iml" filepath="$PROJECT_DIR$/../WeaklySupervised/.idea/WeaklySupervised.iml" />
     </modules>
   </component>
 </project>
