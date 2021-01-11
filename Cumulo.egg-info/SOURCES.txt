@@ -1,5 +1,0 @@
-setup.py
-Cumulo.egg-info/PKG-INFO
-Cumulo.egg-info/SOURCES.txt
-Cumulo.egg-info/dependency_links.txt
-Cumulo.egg-info/top_level.txt
