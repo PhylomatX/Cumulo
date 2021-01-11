@@ -20,9 +20,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="48c72753-7da0-4aa9-95fe-3257e4095ba5" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/cumulo/models/unet_deepcfd.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/cumulo/models/unet_weak.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scripts/pipeline/unet_training.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/../Cumulo_orig/.idea/Cumulo_orig.iml" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/../Cumulo_orig/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/../Cumulo_orig/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
@@ -33,17 +30,6 @@
       <change afterPath="$PROJECT_DIR$/../WeaklySupervised/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/../WeaklySupervised/.idea/misc.xml" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/../WeaklySupervised/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/Cumulo.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Cumulo.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cumulo/data/loader.py" beforeDir="false" afterPath="$PROJECT_DIR$/cumulo/data/loader.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cumulo/data/nc_tile_extractor.py" beforeDir="false" afterPath="$PROJECT_DIR$/cumulo/data/nc_tile_extractor.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cumulo/utils/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/cumulo/utils/utils.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/data/plot.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/data/plot.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/data/tile_generation.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/data/tile_generation.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/data/tile_overview.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/data/tile_overview.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/pipeline/iresnet_training.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/pipeline/iresnet_training.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../WeaklySupervised/single_pixel_labels/src/train_masked.py" beforeDir="false" afterPath="$PROJECT_DIR$/../WeaklySupervised/single_pixel_labels/src/train_masked.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -154,7 +140,7 @@
       <workItem from="1610111425859" duration="15000" />
       <workItem from="1610266027851" duration="9018000" />
       <workItem from="1610284909290" duration="12392000" />
-      <workItem from="1610310139659" duration="5425000" />
+      <workItem from="1610310139659" duration="5460000" />
     </task>
     <servers />
   </component>
