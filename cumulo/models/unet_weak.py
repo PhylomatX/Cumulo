@@ -72,10 +72,10 @@ def extract_img(size, in_tensor):
     return in_tensor
 
 
-class UNet(nn.Module):
+class UNet_weak(nn.Module):
 
     def __init__(self, in_channels, out_channels, starting_filters=32, bn_momentum=0.1):
-        super(UNet, self).__init__()
+        super(UNet_weak, self).__init__()
         self.conv1 = DownConv(in_channels, starting_filters, bn_momentum)
         self.conv2 = DownConv(starting_filters, starting_filters * 2, bn_momentum)
         self.conv3 = DownConv(starting_filters * 2, starting_filters * 4, bn_momentum)

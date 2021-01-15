@@ -39,6 +39,11 @@ def get_most_frequent_label(labels):
     return labels_flat
 
 
+def include_cloud_mask(labels, cloud_mask):
+    labels[labels >= 0] += 1
+    return labels * cloud_mask
+
+
 def main(_):
     nc_dir = FLAGS.nc_path
     save_dir = FLAGS.npz_path
@@ -50,20 +55,26 @@ def main(_):
 
     for ix, filename in enumerate(file_paths):
         radiances, properties, cloud_mask, labels = read_nc(filename)
+
+        name = os.path.basename(filename).replace(".nc", "") + f'_{FLAGS.size}'
+
+        save_name = os.path.join(save_dir, 'normal/' + name)
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
         tiles, positions = sample_random_tiles_from_track(radiances, properties, cloud_mask, labels,
                                                           tile_size=FLAGS.size, redundancy=FLAGS.redundancy)
 
         if tiles is None:
             continue
 
-        name = os.path.basename(filename).replace(".nc", "") + f'_{FLAGS.size}'
-
-        save_name = os.path.join(save_dir, name)
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
         for tile in range(tiles[0].shape[0]):
-            np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=tiles[3].data[tile].squeeze()[..., 0].astype(float))
+            labels = tiles[3].data[tile].squeeze()
+            cloud_mask = tiles[2].data[tile].squeeze()
+            mf_labels = include_cloud_mask(get_most_frequent_label(labels), cloud_mask)
+            first_labels = include_cloud_mask(labels[..., 0], cloud_mask)
+
+            np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, first_labels)))
             # np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], properties=tiles[1].data[tile],
             #          cloud_mask=tiles[2].data[tile], labels=tiles[3].data[tile], location=positions[tile])
 

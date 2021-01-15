@@ -11,7 +11,8 @@ from absl import flags
 from tqdm import tqdm
 import torch.optim as optim
 from cumulo.data.loader import CumuloDataset
-from cumulo.models.unet_weak import UNet
+from cumulo.models.unet_weak import UNet_weak
+from cumulo.models.unet_equi import UNet_equi
 from cumulo.utils.utils import Normalizer, get_dataset_statistics, tile_collate, get_tile_sampler
 
 flags.DEFINE_string('d_path', None, help='Data path')
@@ -72,7 +73,8 @@ def main(_):
     dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
 
     # Prepare model
-    model = UNet(in_channels=13, out_channels=8, starting_filters=32)
+    model = UNet_equi(in_channels=13, out_channels=8, starting_filters=32)
+    print('Model initialized!')
     model = model.to(device)
 
     # Prepare training environment
