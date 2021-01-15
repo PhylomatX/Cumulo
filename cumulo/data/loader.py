@@ -84,9 +84,24 @@ def read_npz(npz_file):
     return file['radiances'], file['labels']
 
 
+def get_mf_label(labels):
+    """ See tile generation method. """
+    return labels[..., 0]
+
+
+def get_low_labels(labels):
+    """ See tile generation method. """
+    return labels[..., 1]
+
+
+def get_low_labels_raw(labels):
+    """ See tile generation method. """
+    return labels[..., 2]
+
+
 class CumuloDataset(Dataset):
 
-    def __init__(self, root_dir, ext="npz", normalizer=None, indices=None, label_preproc=None):
+    def __init__(self, root_dir, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels):
 
         self.root_dir = root_dir
         self.ext = ext

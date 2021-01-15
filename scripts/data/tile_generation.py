@@ -58,7 +58,7 @@ def main(_):
 
         name = os.path.basename(filename).replace(".nc", "") + f'_{FLAGS.size}'
 
-        save_name = os.path.join(save_dir, 'normal/' + name)
+        save_name = os.path.join(save_dir, name)
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
@@ -72,9 +72,10 @@ def main(_):
             labels = tiles[3].data[tile].squeeze()
             cloud_mask = tiles[2].data[tile].squeeze()
             mf_labels = include_cloud_mask(get_most_frequent_label(labels), cloud_mask)
-            first_labels = include_cloud_mask(labels[..., 0], cloud_mask)
+            low_labels = include_cloud_mask(labels[..., 0], cloud_mask)
+            low_labels_raw = labels[..., 0]
 
-            np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, first_labels)))
+            np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, low_labels, low_labels_raw)))
             # np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], properties=tiles[1].data[tile],
             #          cloud_mask=tiles[2].data[tile], labels=tiles[3].data[tile], location=positions[tile])
 
