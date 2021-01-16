@@ -11,8 +11,6 @@ FLAGS = flags.FLAGS
 
 def check_size(radiances):
     """ Ensures that the radiances of all images have the same shape. """
-    import ipdb
-    ipdb.set_trace()
     if radiances.shape != (13, 1354, 2030):
         return True
     return False
