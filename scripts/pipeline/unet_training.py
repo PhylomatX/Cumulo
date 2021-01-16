@@ -18,12 +18,13 @@ from cumulo.utils.utils import Normalizer, get_dataset_statistics
 flags.DEFINE_string('d_path', None, help='Data path')
 flags.DEFINE_string('m_path', None, help='Model path')
 flags.DEFINE_integer('r_seed', 1, help='Random seed')
+flags.DEFINE_integer('nb_epochs', 100, help='Number of epochs')
 FLAGS = flags.FLAGS
 
 
 def main(_):
     # Initialize parameters and prepare data
-    nb_epochs = 100
+    nb_epochs = FLAGS.nb_epochs
     nb_classes = 9
     batch_size = 32
     lr = 0.001
@@ -73,7 +74,7 @@ def main(_):
     dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
 
     # Prepare model
-    model = UNet_weak(in_channels=13, out_channels=8, starting_filters=32)
+    model = UNet_weak(in_channels=13, out_channels=nb_classes, starting_filters=32)
     print('Model initialized!')
     model = model.to(device)
 
@@ -83,17 +84,17 @@ def main(_):
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     # Start training
-    model, metrics = train(model, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
+    metrics = train(model, FLAGS.m_path, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
 
 
-def train(model, dataloaders, dataset_sizes, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
+def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
     """
     Trains a model for all epochs using the provided dataloader.
     """
     t0 = time.time()
 
-    best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
+    best_loss = None
 
     metrics = {'train_loss': [], 'train_acc': [], 'train_segacc': [],
                'val_loss': [], 'val_acc': [], 'val_segacc': []}
@@ -123,7 +124,7 @@ def train(model, dataloaders, dataset_sizes, criterion, optimizer, scheduler, nu
 
                 # forward
                 with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
+                    outputs = model(inputs.type(torch.float32))
                     mask = labels != -1
                     loss = 0
                     for ix in range(mask.shape[0]):
@@ -151,6 +152,9 @@ def train(model, dataloaders, dataset_sizes, criterion, optimizer, scheduler, nu
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects / dataset_sizes[phase]
 
+            if best_loss is None:
+                best_loss = epoch_loss
+
             metrics[phase + '_loss'].append(epoch_loss)
             metrics[phase + '_acc'].append(float(epoch_acc))
 
@@ -160,17 +164,18 @@ def train(model, dataloaders, dataset_sizes, criterion, optimizer, scheduler, nu
             # deep copy the model
             if phase == 'val' and epoch_acc > best_acc:
                 best_acc = epoch_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
-        print()
+                torch.save({'model_state_dict': model.state_dict()}, os.path.join(m_path, f'val_best.pth'))
+
+            if phase == 'train' and epoch_loss < best_loss:
+                best_loss = epoch_loss
+                torch.save({'model_state_dict': model.state_dict()}, os.path.join(m_path, f'train_best.pth'))
 
     time_elapsed = time.time() - t0
     print('Training complete in {:.0f}m {:.0f}s'.format(
         time_elapsed // 60, time_elapsed % 60))
     print('Best val single pixel accuracy: {:4f}'.format(best_acc))
 
-    # load best model weights
-    model.load_state_dict(best_model_wts)
-    return model, metrics
+    return metrics
 
 
 if __name__ == '__main__':
