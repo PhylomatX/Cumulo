@@ -43,7 +43,7 @@ def make_directory(dir_path):
         os.makedirs(dir_path)
 
 
-def get_dataset_statistics(dataset, nb_classes, batch_size, device='cuda', tile_size=9):
+def get_dataset_statistics(dataset, nb_classes, batch_size, tile_size, device='cuda'):
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
     weights = np.zeros(nb_classes)
     sum_x = torch.zeros(13)
@@ -67,11 +67,11 @@ def get_dataset_statistics(dataset, nb_classes, batch_size, device='cuda', tile_
         std += torch.sum((tiles - m).pow(2), (0, 2, 3), keepdim=True)
 
     s = ((std / nb_pixels) ** 0.5)
-    weights /= np.sum(weights)
-    weights = 1 / (np.log(1.02 + weights))
+    weights_div = weights / np.sum(weights)
+    # weights = 1 / (np.log(1.02 + weights))
     m = m.cpu()
     s = s.cpu()
-    return weights / np.sum(weights), m.reshape(13, 1, 1).numpy(), s.reshape(13, 1, 1).numpy()
+    return weights, weights_div, m.reshape(13, 1, 1).numpy(), s.reshape(13, 1, 1).numpy()
 
 
 class Normalizer(object):

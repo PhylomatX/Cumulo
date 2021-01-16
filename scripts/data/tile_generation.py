@@ -66,19 +66,17 @@ def main(_):
         tiles, positions = sample_random_tiles_from_track(radiances, properties, cloud_mask, labels,
                                                           tile_size=FLAGS.size, redundancy=FLAGS.redundancy)
 
-        if tiles is None:
-            continue
+        if tiles is not None:
+            for tile in range(tiles[0].shape[0]):
+                labels = tiles[3].data[tile].squeeze()
+                cloud_mask = tiles[2].data[tile].squeeze()
+                mf_labels = include_cloud_mask(get_most_frequent_label(labels), cloud_mask)
+                low_labels = include_cloud_mask(labels[..., 0], cloud_mask)
+                low_labels_raw = labels[..., 0]
 
-        for tile in range(tiles[0].shape[0]):
-            labels = tiles[3].data[tile].squeeze()
-            cloud_mask = tiles[2].data[tile].squeeze()
-            mf_labels = include_cloud_mask(get_most_frequent_label(labels), cloud_mask)
-            low_labels = include_cloud_mask(labels[..., 0], cloud_mask)
-            low_labels_raw = labels[..., 0]
-
-            np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, low_labels, low_labels_raw)))
-            # np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], properties=tiles[1].data[tile],
-            #          cloud_mask=tiles[2].data[tile], labels=tiles[3].data[tile], location=positions[tile])
+                np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, low_labels, low_labels_raw)))
+                # np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], properties=tiles[1].data[tile],
+                #          cloud_mask=tiles[2].data[tile], labels=tiles[3].data[tile], location=positions[tile])
 
         if FLAGS.remove:
             os.remove(filename)

@@ -13,7 +13,7 @@ import torch.optim as optim
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
-from cumulo.utils.utils import Normalizer, get_dataset_statistics, tile_collate, get_tile_sampler
+from cumulo.utils.utils import Normalizer, get_dataset_statistics
 
 flags.DEFINE_string('d_path', None, help='Data path')
 flags.DEFINE_string('m_path', None, help='Model path')
@@ -24,7 +24,7 @@ FLAGS = flags.FLAGS
 def main(_):
     # Initialize parameters and prepare data
     nb_epochs = 100
-    nb_classes = 8
+    nb_classes = 9
     batch_size = 32
     lr = 0.001
     weight_decay = 0.0
@@ -50,7 +50,7 @@ def main(_):
     except FileNotFoundError:
         print("Computing dataset mean, standard deviation and class ratios")
         dataset = CumuloDataset(FLAGS.d_path)
-        class_weights, m, s = get_dataset_statistics(dataset, nb_classes, batch_size=40, device=device)
+        weights, class_weights, m, s = get_dataset_statistics(dataset, nb_classes, batch_size=40, tile_size=128, device=device)
         np.save(os.path.join(FLAGS.d_path, "class-weights.npy"), class_weights)
         np.save(os.path.join(FLAGS.d_path, "mean.npy"), m)
         np.save(os.path.join(FLAGS.d_path, "std.npy"), s)
@@ -62,7 +62,7 @@ def main(_):
     idx = np.arange(tile_num)
     np.random.shuffle(idx)
     # 10 % for validation, 20 % for testing, 70 % for training
-    train_idx, val_idx = np.split(idx, [int(.8 * tile_num)])
+    train_idx, val_idx = np.split(idx, [int(.9 * tile_num)])
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx)
     val_dataset = CumuloDataset(FLAGS.d_path, "npz", normalizer=normalizer, indices=val_idx)
@@ -73,7 +73,7 @@ def main(_):
     dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
 
     # Prepare model
-    model = UNet_equi(in_channels=13, out_channels=8, starting_filters=32)
+    model = UNet_weak(in_channels=13, out_channels=8, starting_filters=32)
     print('Model initialized!')
     model = model.to(device)
 
