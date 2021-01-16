@@ -67,8 +67,8 @@ def get_dataset_statistics(dataset, nb_classes, batch_size, tile_size, device='c
         std += torch.sum((tiles - m).pow(2), (0, 2, 3), keepdim=True)
 
     s = ((std / nb_pixels) ** 0.5)
-    weights_div = weights / np.sum(weights)
-    # weights = 1 / (np.log(1.02 + weights))
+    weights = weights / np.sum(weights)
+    weights_div = 1 / (np.log(1.02 + weights))
     m = m.cpu()
     s = s.cpu()
     return weights, weights_div, m.reshape(13, 1, 1).numpy(), s.reshape(13, 1, 1).numpy()
