@@ -1,7 +1,7 @@
 import netCDF4 as nc4
 import numpy as np
 import os
-
+from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 
@@ -52,7 +52,7 @@ def get_dataset_statistics(dataset, nb_classes, batch_size, tile_size, device='c
     std = std.to(device)
     nb_tiles = 0
 
-    for tiles, labels in dataloader:
+    for tiles, labels in tqdm(dataloader):
         nb_tiles += len(tiles)
         tiles = tiles.to(device)
         # class weights
