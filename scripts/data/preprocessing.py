@@ -9,6 +9,15 @@ flags.DEFINE_string('nc_path', None, help='Directory where nc files are located.
 FLAGS = flags.FLAGS
 
 
+def check_size(radiances):
+    """ Ensures that the radiances of all images have the same shape. """
+    import ipdb
+    ipdb.set_trace()
+    if radiances.shape != (13, 1354, 2030):
+        return True
+    return False
+
+
 def check_for_stripe_pattern(radiances) -> bool:
     """ Checks if multiple columns / rows are the same as this is a common issue in the nc files. """
     erroneous = False
@@ -25,7 +34,7 @@ def main(_):
     for file in tqdm(files):
         filename = os.path.join(FLAGS.nc_path, file)
         radiances, properties, cloud_mask, labels = read_nc(filename)
-        if check_for_stripe_pattern(radiances):
+        if check_size(radiances) or check_for_stripe_pattern(radiances):
             os.remove(filename)
             removed += 1
             print(f'Removed {file}')
