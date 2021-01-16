@@ -43,18 +43,19 @@ def make_directory(dir_path):
         os.makedirs(dir_path)
 
 
-def get_dataset_statistics(dataset, nb_classes, tile_size):
+def get_dataset_statistics(dataset, nb_classes, tile_size, nb_tiles=None):
     weights = np.zeros(nb_classes)
     m = np.zeros(13)
     s = np.zeros(13)
-    nb_tiles = len(dataset)
+    if nb_tiles is None:
+        nb_tiles = len(dataset)
 
     for sample in tqdm(range(nb_tiles)):
         rads, labels = dataset[sample]
         weights += np.histogram(labels, bins=range(nb_classes + 1), normed=False)[0]
-        m += np.sum(rads, (1, 2))
+        m += np.mean(rads, axis=(1, 2))
 
-    m /= nb_tiles * tile_size ** 2
+    m /= nb_tiles
     m = m.reshape((13, 1, 1))
 
     for sample in tqdm(range(nb_tiles)):
@@ -62,11 +63,11 @@ def get_dataset_statistics(dataset, nb_classes, tile_size):
         s += np.sum((rads - m)**2, (1, 2))
 
     s /= nb_tiles * tile_size ** 2
-
-    s = s.reshape((13, 1, 1))
+    std = np.sqrt(s)
+    std = std.reshape((13, 1, 1))
     weights = weights / np.sum(weights)
     weights_div = 1 / (np.log(1.02 + weights))
-    return weights, weights_div, m, s
+    return weights, weights_div, m, std
 
 
 class Normalizer(object):

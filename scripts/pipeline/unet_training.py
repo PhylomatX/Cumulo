@@ -46,16 +46,16 @@ def main(_):
     try:
         class_weights = np.load(os.path.join(FLAGS.d_path, "class-weights.npy"))
         m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
-        s = np.load(os.path.join(FLAGS.d_path, "std.npy"))
+        std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
     except FileNotFoundError:
         print("Computing dataset mean, standard deviation and class ratios")
         dataset = CumuloDataset(FLAGS.d_path)
-        weights, class_weights, m, s = get_dataset_statistics(dataset, nb_classes, batch_size=40, tile_size=128, device=device)
+        weights, class_weights, m, std = get_dataset_statistics(dataset, nb_classes, tile_size=128)
         np.save(os.path.join(FLAGS.d_path, "class-weights.npy"), class_weights)
         np.save(os.path.join(FLAGS.d_path, "mean.npy"), m)
-        np.save(os.path.join(FLAGS.d_path, "std.npy"), s)
+        np.save(os.path.join(FLAGS.d_path, "std.npy"), std)
 
-    normalizer = Normalizer(m, s)
+    normalizer = Normalizer(m, std)
     class_weights = torch.from_numpy(class_weights).float()
 
     tile_num = len(glob.glob(os.path.join(FLAGS.d_path, "*.npz")))
