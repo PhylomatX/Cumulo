@@ -19,6 +19,8 @@ flags.DEFINE_string('m_path', None, help='Model path')
 flags.DEFINE_integer('r_seed', 1, help='Random seed')
 flags.DEFINE_integer('nb_epochs', 100, help='Number of epochs')
 flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloader.')
+flags.DEFINE_integer('batch_size', 32, help='Batch size for training and validation.')
+flags.DEFINE_integer('tile_number', None, help='Tile number / data set size.')
 FLAGS = flags.FLAGS
 
 
@@ -26,7 +28,7 @@ def main(_):
     # Initialize parameters and prepare data
     nb_epochs = FLAGS.nb_epochs
     nb_classes = 9
-    batch_size = 32
+    batch_size = FLAGS.batch_size
     lr = 0.001
     weight_decay = 0.0
 
@@ -59,7 +61,10 @@ def main(_):
     normalizer = Normalizer(m, std)
     class_weights = torch.from_numpy(class_weights).float()
 
-    tile_num = len(glob.glob(os.path.join(FLAGS.d_path, "*.npz")))
+    if FLAGS.tile_num is None:
+        tile_num = len(glob.glob(os.path.join(FLAGS.d_path, "*.npz")))
+    else:
+        tile_num = FLAGS.tile_num
     idx = np.arange(tile_num)
     np.random.shuffle(idx)
     # 10 % for validation, 20 % for testing, 70 % for training
