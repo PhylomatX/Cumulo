@@ -43,35 +43,30 @@ def make_directory(dir_path):
         os.makedirs(dir_path)
 
 
-def get_dataset_statistics(dataset, nb_classes, batch_size, tile_size, device='cuda'):
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
+def get_dataset_statistics(dataset, nb_classes, tile_size):
     weights = np.zeros(nb_classes)
-    sum_x = torch.zeros(13)
-    std = torch.zeros(1, 13, 1, 1)
-    sum_x = sum_x.to(device)
-    std = std.to(device)
-    nb_tiles = 0
+    m = np.zeros(13)
+    s = np.zeros(13)
+    nb_tiles = len(dataset)
 
-    for tiles, labels in tqdm(dataloader):
-        nb_tiles += len(tiles)
-        tiles = tiles.to(device)
-        # class weights
+    for sample in tqdm(range(nb_tiles)):
+        rads, labels = dataset[sample]
         weights += np.histogram(labels, bins=range(nb_classes + 1), normed=False)[0]
-        sum_x += torch.sum(tiles, (0, 2, 3))
+        m += np.sum(rads, (1, 2))
 
-    nb_pixels = nb_tiles * tile_size
-    m = (sum_x / nb_pixels).reshape(1, 13, 1, 1)
+    m /= nb_tiles * tile_size ** 2
+    m = m.reshape((13, 1, 1))
 
-    for tiles, _ in dataloader:
-        tiles = tiles.to(device)
-        std += torch.sum((tiles - m).pow(2), (0, 2, 3), keepdim=True)
+    for sample in tqdm(range(nb_tiles)):
+        rads, labels = dataset[sample]
+        s += np.sum((rads - m)**2, (1, 2))
 
-    s = ((std / nb_pixels) ** 0.5)
+    s /= nb_tiles * tile_size ** 2
+
+    s = s.reshape((13, 1, 1))
     weights = weights / np.sum(weights)
     weights_div = 1 / (np.log(1.02 + weights))
-    m = m.cpu()
-    s = s.cpu()
-    return weights, weights_div, m.reshape(13, 1, 1).numpy(), s.reshape(13, 1, 1).numpy()
+    return weights, weights_div, m, s
 
 
 class Normalizer(object):

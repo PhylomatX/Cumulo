@@ -14,9 +14,11 @@ FLAGS = flags.FLAGS
 
 def main(_):
     dataset = CumuloDataset(FLAGS.npz_path, ext="npz")
-    weights, class_weights, m, s = get_dataset_statistics(dataset, FLAGS.class_num, batch_size=40, tile_size=FLAGS.tile_size, device='cpu')
+    weights, class_weights, m, s = get_dataset_statistics(dataset, FLAGS.class_num, tile_size=FLAGS.tile_size)
     print(weights)
     print(class_weights)
+    print(m.squeeze())
+    print(s.squeeze())
     np.save(os.path.join(FLAGS.npz_path, "class-weights.npy"), class_weights)
     np.save(os.path.join(FLAGS.npz_path, "mean.npy"), m)
     np.save(os.path.join(FLAGS.npz_path, "std.npy"), s)
