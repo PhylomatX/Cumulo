@@ -10,6 +10,7 @@ flags.DEFINE_string('nc_path', None, help='The dataset directory.')
 flags.DEFINE_string('npz_path', None, help='Directory where tiles should be saved.')
 flags.DEFINE_integer('size', 3, help='Tile size.')
 flags.DEFINE_integer('redundancy', 1, help='How many tiles should get extracted at each position?')
+flags.DEFINE_boolean('remove', False, help='Remove nc files after tiles have been generated.')
 FLAGS = flags.FLAGS
 
 
@@ -78,6 +79,9 @@ def main(_):
             np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, low_labels, low_labels_raw)))
             # np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], properties=tiles[1].data[tile],
             #          cloud_mask=tiles[2].data[tile], labels=tiles[3].data[tile], location=positions[tile])
+
+        if FLAGS.remove:
+            os.remove(filename)
 
 
 if __name__ == '__main__':
