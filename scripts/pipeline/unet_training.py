@@ -1,6 +1,5 @@
 import os
 import time
-import copy
 import torch
 import random
 import glob
@@ -19,6 +18,7 @@ flags.DEFINE_string('d_path', None, help='Data path')
 flags.DEFINE_string('m_path', None, help='Model path')
 flags.DEFINE_integer('r_seed', 1, help='Random seed')
 flags.DEFINE_integer('nb_epochs', 100, help='Number of epochs')
+flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloader.')
 FLAGS = flags.FLAGS
 
 
@@ -68,8 +68,8 @@ def main(_):
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx)
     val_dataset = CumuloDataset(FLAGS.d_path, "npz", normalizer=normalizer, indices=val_idx)
 
-    dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8),
-                   'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)}
+    dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers),
+                   'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=FLAGS.num_workers)}
 
     dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
 
