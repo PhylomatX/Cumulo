@@ -20,7 +20,7 @@ flags.DEFINE_integer('r_seed', 1, help='Random seed')
 flags.DEFINE_integer('nb_epochs', 100, help='Number of epochs')
 flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloader.')
 flags.DEFINE_integer('batch_size', 32, help='Batch size for training and validation.')
-flags.DEFINE_integer('tile_number', None, help='Tile number / data set size.')
+flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
 FLAGS = flags.FLAGS
 
 
