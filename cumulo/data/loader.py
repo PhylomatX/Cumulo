@@ -4,6 +4,7 @@ import os
 from absl import app
 from absl import flags
 import netCDF4 as nc4
+import torch
 from torch.utils.data import Dataset
 
 flags.DEFINE_string('data_path', None, help='The dataset directory.')
@@ -136,7 +137,7 @@ class CumuloDataset(Dataset):
         if self.label_preproc is not None:
             labels = self.label_preproc(labels)
 
-        return radiances, labels
+        return torch.from_numpy(radiances).to('cuda'), torch.from_numpy(labels).to('cuda')
 
     def __str__(self):
         return 'CUMULO'

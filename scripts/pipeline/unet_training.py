@@ -121,8 +121,8 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
 
             # Iterate over data.
             for inputs, labels in tqdm(dataloaders[phase]):
-                inputs = inputs.to(device)
-                labels = labels.to(device)
+                inputs = inputs
+                labels = labels
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
