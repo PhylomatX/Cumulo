@@ -137,7 +137,7 @@ class CumuloDataset(Dataset):
         if self.label_preproc is not None:
             labels = self.label_preproc(labels)
 
-        return torch.from_numpy(radiances).to('cuda'), torch.from_numpy(labels).to('cuda')
+        return torch.from_numpy(radiances), torch.from_numpy(labels)
 
     def __str__(self):
         return 'CUMULO'
