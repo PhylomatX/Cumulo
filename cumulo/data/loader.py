@@ -5,6 +5,7 @@ from absl import app
 from absl import flags
 import netCDF4 as nc4
 import torch
+import h5py
 from torch.utils.data import Dataset
 
 flags.DEFINE_string('data_path', None, help='The dataset directory.')
@@ -102,14 +103,11 @@ def get_low_labels_raw(labels):
 
 class CumuloDataset(Dataset):
 
-    def __init__(self, root_dir, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels):
+    def __init__(self, root_dir, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels, file_size=1):
 
         self.root_dir = root_dir
         self.ext = ext
-
-        if ext not in ["nc", "npz"]:
-            raise NotImplementedError("only .nc and .npz extensions are supported")
-
+        self.file_size = file_size
         self.file_paths = glob.glob(os.path.join(root_dir, "*." + ext))
 
         if len(self.file_paths) == 0:
@@ -122,14 +120,21 @@ class CumuloDataset(Dataset):
         self.label_preproc = label_preproc
 
     def __len__(self):
-
-        return len(self.file_paths)
+        if self.ext == "npz":
+            return len(self.file_paths)
+        elif self.ext == "h5":
+            return len(self.file_paths) * self.file_size
 
     def __getitem__(self, idx):
-        filename = self.file_paths[idx]
-
         if self.ext == "npz":
+            filename = self.file_paths[idx]
             radiances, labels = read_npz(filename)
+        elif self.ext == "h5":
+            file_num = int(idx / self.file_size)
+            file_ix = idx % self.file_size
+            file = h5py.File(self.file_paths[file_num], "r+")
+            radiances = np.array(file["/radiances"]).astype(np.float32)[file_ix]
+            labels = np.array(file["/labels"]).astype(np.int8)[file_ix]
 
         if self.normalizer is not None:
             radiances = self.normalizer(radiances)

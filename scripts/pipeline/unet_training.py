@@ -21,6 +21,7 @@ flags.DEFINE_integer('nb_epochs', 100, help='Number of epochs')
 flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloader.')
 flags.DEFINE_integer('batch_size', 32, help='Batch size for training and validation.')
 flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
+flags.DEFINE_bool('val', False, help='Flag for validation after each epoch.')
 FLAGS = flags.FLAGS
 
 
@@ -67,16 +68,26 @@ def main(_):
         tile_num = FLAGS.tile_num
     idx = np.arange(tile_num)
     np.random.shuffle(idx)
-    # 10 % for validation, 20 % for testing, 70 % for training
-    train_idx, val_idx = np.split(idx, [int(.9 * tile_num)])
+    try:
+        train_idx = np.load(os.path.join(FLAGS.m_path, 'train_idx.npy'))
+        val_idx = np.load(os.path.join(FLAGS.m_path, 'val_idx.npy'))
+    except FileNotFoundError:
+        train_idx, val_idx = np.split(idx, [int(.9 * tile_num)])
+        np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
+        np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx)
-    val_dataset = CumuloDataset(FLAGS.d_path, "npz", normalizer=normalizer, indices=val_idx)
 
-    dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers),
-                   'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=FLAGS.num_workers)}
-
-    dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
+    if FLAGS.val:
+        print("Training with validation!")
+        val_dataset = CumuloDataset(FLAGS.d_path, "npz", normalizer=normalizer, indices=val_idx)
+        dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers),
+                       'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=FLAGS.num_workers)}
+        dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
+    else:
+        print("Training without validation!")
+        dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers)}
+        dataset_sizes = {'train': len(train_dataset)}
 
     # Prepare model
     model = UNet_weak(in_channels=13, out_channels=nb_classes, starting_filters=32)
@@ -109,7 +120,7 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
         print('-' * 10)
 
         # Each epoch has a training and validation phase
-        for phase in ['train', 'val']:
+        for phase in dataloaders:
             if phase == 'train':
                 model.train()  # Set model to training mode
             else:
