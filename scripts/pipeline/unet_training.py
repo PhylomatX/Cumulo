@@ -22,6 +22,8 @@ flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloade
 flags.DEFINE_integer('batch_size', 32, help='Batch size for training and validation.')
 flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
 flags.DEFINE_bool('val', False, help='Flag for validation after each epoch.')
+flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
+flags.DEFINE_integer('stop', None, help='Epoch step where debugging should start.')
 FLAGS = flags.FLAGS
 
 
@@ -90,7 +92,10 @@ def main(_):
         dataset_sizes = {'train': len(train_dataset)}
 
     # Prepare model
-    model = UNet_weak(in_channels=13, out_channels=nb_classes, starting_filters=32)
+    if FLAGS.model == 'weak':
+        model = UNet_weak(in_channels=13, out_channels=nb_classes, starting_filters=32)
+    elif FLAGS.model == 'equi':
+        model = UNet_equi(in_channels=13, out_channels=nb_classes, starting_filters=32)
     print('Model initialized!')
     model = model.to(device)
 
@@ -132,6 +137,9 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
 
             # Iterate over data.
             for inputs, labels in tqdm(dataloaders[phase]):
+                if FLAGS.stop is not None and i == FLAGS.stop:
+                    import ipdb
+                    ipdb.set_trace()
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 

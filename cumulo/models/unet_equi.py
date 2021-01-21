@@ -22,10 +22,17 @@ class ConvConv(enn.EquivariantModule):
         X = self.conv(X)
         return X
 
-    def evaluate_output_shape(self, input_shape):
-        assert len(input_shape) == 4
-        assert input_shape[1] == self.in_type.size
-        return input_shape
+
+def get_ConvConv(in_type, out_type, bn_momentum=0.1):
+    conv_conv = enn.SequentialModule(
+        enn.R2Conv(in_type, out_type, kernel_size=3, padding=1, stride=1),
+        enn.InnerBatchNorm(out_type, momentum=bn_momentum),
+        enn.ReLU(out_type, inplace=True),
+        enn.R2Conv(out_type, out_type, kernel_size=3, padding=1, stride=1),
+        enn.InnerBatchNorm(out_type, momentum=bn_momentum),
+        enn.ReLU(out_type, inplace=True)
+    )
+    return conv_conv
 
 
 class DownConv(enn.EquivariantModule):
@@ -38,11 +45,6 @@ class DownConv(enn.EquivariantModule):
         X = self.conv(X)
         pool_X = self.pool(X)
         return pool_X, X
-
-    def evaluate_output_shape(self, input_shape):
-        assert len(input_shape) == 4
-        assert input_shape[1] == self.in_type.size
-        return input_shape
 
 
 class UpconvConcat(nn.Module):
@@ -82,27 +84,30 @@ class UNet_equi(nn.Module):
 
         self.in_channels = enn.FieldType(self.r2_act, in_channels * [self.r2_act.trivial_repr])
         self.filters = enn.FieldType(self.r2_act, starting_filters * [self.r2_act.regular_repr])
-        self.filters2 = enn.FieldType(self.r2_act, 2 * starting_filters * [self.r2_act.regular_repr])
-        self.filters4 = enn.FieldType(self.r2_act, 4 * starting_filters * [self.r2_act.regular_repr])
-        self.filters8 = enn.FieldType(self.r2_act, 8 * starting_filters * [self.r2_act.regular_repr])
+        # self.filters2 = enn.FieldType(self.r2_act, 2 * starting_filters * [self.r2_act.regular_repr])
+        # self.filters4 = enn.FieldType(self.r2_act, 4 * starting_filters * [self.r2_act.regular_repr])
+        # self.filters8 = enn.FieldType(self.r2_act, 8 * starting_filters * [self.r2_act.regular_repr])
         self.out_channels = enn.FieldType(self.r2_act, out_channels * [self.r2_act.regular_repr])
 
-        self.conv1 = DownConv(self.in_channels, self.filters, bn_momentum)
-        self.conv2 = DownConv(self.filters, self.filters2, bn_momentum)
-        self.conv3 = DownConv(self.filters2, self.filters4, bn_momentum)
-        self.conv4 = ConvConv(self.filters4, self.filters8, bn_momentum)
-        self.upconv1 = UpconvConcat(self.filters8, self.filters4, bn_momentum)
-        self.upconv2 = UpconvConcat(self.filters4, self.filters2, bn_momentum)
-        self.upconv3 = UpconvConcat(self.filters2, self.filters, bn_momentum)
+        self.conv1 = get_ConvConv(self.in_channels, self.filters, bn_momentum)
         self.conv_out = enn.R2Conv(self.filters, self.out_channels, kernel_size=1, padding=0, stride=1)
+
+        # self.conv1 = DownConv(self.in_channels, self.filters, bn_momentum)
+        # self.conv2 = DownConv(self.filters, self.filters2, bn_momentum)
+        # self.conv3 = DownConv(self.filters2, self.filters4, bn_momentum)
+        # self.conv4 = ConvConv(self.filters4, self.filters8, bn_momentum)
+        # self.upconv1 = UpconvConcat(self.filters8, self.filters4, bn_momentum)
+        # self.upconv2 = UpconvConcat(self.filters4, self.filters2, bn_momentum)
+        # self.upconv3 = UpconvConcat(self.filters2, self.filters, bn_momentum)
+        # self.conv_out = enn.R2Conv(self.filters, self.out_channels, kernel_size=1, padding=0, stride=1)
 
     def forward(self, X):
         X, conv1 = self.conv1(X)
-        X, conv2 = self.conv2(X)
-        X, conv3 = self.conv3(X)
-        X = self.conv4(X)
-        X = self.upconv1(X, conv3)
-        X = self.upconv2(X, conv2)
-        X = self.upconv3(X, conv1)
+        # X, conv2 = self.conv2(X)
+        # X, conv3 = self.conv3(X)
+        # X = self.conv4(X)
+        # X = self.upconv1(X, conv3)
+        # X = self.upconv2(X, conv2)
+        # X = self.upconv3(X, conv1)
         X = self.conv_out(X)
         return X

@@ -52,6 +52,8 @@ def get_dataset_statistics(dataset, nb_classes, tile_size, nb_tiles=None):
 
     for sample in tqdm(range(nb_tiles)):
         rads, labels = dataset[sample]
+        rads = rads.numpy()
+        labels = labels.numpy()
         weights += np.histogram(labels, bins=range(nb_classes + 1), normed=False)[0]
         m += np.mean(rads, axis=(1, 2))
 
@@ -60,6 +62,7 @@ def get_dataset_statistics(dataset, nb_classes, tile_size, nb_tiles=None):
 
     for sample in tqdm(range(nb_tiles)):
         rads, labels = dataset[sample]
+        rads = rads.numpy()
         s += np.sum((rads - m)**2, (1, 2))
 
     s /= nb_tiles * tile_size ** 2
