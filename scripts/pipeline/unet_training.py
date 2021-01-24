@@ -9,7 +9,7 @@ from absl import app
 import torch.nn as nn
 from absl import flags
 import torch.optim as optim
-from cumulo.data.loader import CumuloDataset, TestDataset
+from cumulo.data.loader import CumuloDataset, TestDatasetTorch
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
 from cumulo.utils.utils import Normalizer, get_dataset_statistics
@@ -84,14 +84,14 @@ def main(_):
     if not FLAGS.testloader:
         train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx)
     else:
-        train_dataset = TestDataset(FLAGS.d_path)
+        train_dataset = TestDatasetTorch(FLAGS.d_path)
 
     if FLAGS.val:
         print("Training with validation!")
         if not FLAGS.testloader:
             val_dataset = CumuloDataset(FLAGS.d_path, "npz", normalizer=normalizer, indices=val_idx)
         else:
-            val_dataset = TestDataset(FLAGS.d_path)
+            val_dataset = TestDatasetTorch(FLAGS.d_path)
         dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers),
                        'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=FLAGS.num_workers)}
         dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
@@ -123,9 +123,8 @@ def main(_):
 def test_dataloder(dataloaders, num_epochs=1000, device='cuda'):
     for epoch in range(num_epochs):
         for phase in dataloaders:
-            for inputs, labels in dataloaders[phase]:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
+            for inputs, labels in tqdm(dataloaders[phase]):
+                continue
 
 
 def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):

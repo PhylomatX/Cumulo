@@ -164,3 +164,17 @@ class TestDataset(Dataset):
         radiances, labels = read_npz(filename)
         return radiances, labels[..., 0], self.file_paths[idx]
 
+
+class TestDatasetTorch(Dataset):
+    def __init__(self, d_path: str):
+        self.dataset = TestDataset(d_path)
+
+    def get_files(self):
+        return self.dataset.get_files()
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        rads, labs, file = self.dataset[idx]
+        return torch.from_numpy(rads), torch.from_numpy(labs)
