@@ -3,6 +3,7 @@ import time
 import torch
 import random
 import glob
+from tqdm import tqdm
 import numpy as np
 from absl import app
 import torch.nn as nn
@@ -121,10 +122,6 @@ def main(_):
 
 def test_dataloder(dataloaders, num_epochs=1000, device='cuda'):
     for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        print('-' * 10)
-
-        # Each epoch has a training and validation phase
         for phase in dataloaders:
             for inputs, labels in dataloaders[phase]:
                 inputs = inputs.to(device)

@@ -149,18 +149,18 @@ class CumuloDataset(Dataset):
 
 class TestDataset(Dataset):
 
-    def __init__(self, root_dir: str, size: int = 60000 ):
+    def __init__(self, d_path: str):
+        self.root_dir = d_path
+        self.file_paths = glob.glob(os.path.join(d_path, "*.npz"))
 
-        self.root_dir = root_dir
-        self.size = size
-        self.file_paths = glob.glob(os.path.join(root_dir, "*.npz"))
+    def get_files(self):
+        return self.file_paths
 
     def __len__(self):
-        return self.size
+        return len(self.file_paths)
 
     def __getitem__(self, idx):
-        idx = idx % len(self.file_paths)
         filename = self.file_paths[idx]
         radiances, labels = read_npz(filename)
-        return torch.from_numpy(radiances), torch.from_numpy(labels[..., 0])
+        return radiances, labels[..., 0], self.file_paths[idx]
 
