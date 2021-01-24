@@ -9,6 +9,7 @@ flags.DEFINE_string('npz_path', None, help='Location of npz files')
 flags.DEFINE_string('out_path', None, help='Directory where merged tiles should be saved.')
 flags.DEFINE_integer('iters', 20, help='Number of iterations')
 flags.DEFINE_integer('fnum', None, help='Number of files')
+flags.DEFINE_integer('stop', None, help='Step for debugging')
 FLAGS = flags.FLAGS
 
 
@@ -27,6 +28,9 @@ def bus_test(npz_path: str, out_path: str):
 
     for j in range(FLAGS.iters):
         for i in tqdm(range(fnum)):
+            if FLAGS.stop is not None and i == FLAGS.stop:
+                import ipdb
+                ipdb.set_trace()
             rads, labs, file = dataset[i]
             print(file)
 
