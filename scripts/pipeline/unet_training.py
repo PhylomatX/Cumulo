@@ -105,7 +105,20 @@ def main(_):
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     # Start training
-    metrics = train(model, FLAGS.m_path, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
+    test_dataloder(dataloaders, num_epochs=nb_epochs, device=device)
+    # metrics = train(model, FLAGS.m_path, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
+
+
+def test_dataloder(dataloaders, num_epochs=1000, device='cuda'):
+    for epoch in range(num_epochs):
+        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+        print('-' * 10)
+
+        # Each epoch has a training and validation phase
+        for phase in dataloaders:
+            for inputs, labels in tqdm(dataloaders[phase]):
+                inputs = inputs.to(device)
+                labels = labels.to(device)
 
 
 def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
