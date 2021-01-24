@@ -7,6 +7,8 @@ from absl import flags
 
 flags.DEFINE_string('npz_path', None, help='Location of npz files')
 flags.DEFINE_string('out_path', None, help='Directory where merged tiles should be saved.')
+flags.DEFINE_integer('iters', 20, help='Number of iterations')
+flags.DEFINE_integer('fnum', None, help='Number of files')
 FLAGS = flags.FLAGS
 
 
@@ -18,9 +20,15 @@ def bus_test(npz_path: str, out_path: str):
     with open(os.path.join(out_path, 'files.pkl'), 'wb') as f:
         pkl.dump(files, f)
 
-    for i in tqdm(range(len(dataset))):
-        rads, labs, file = dataset[i]
-        print(file)
+    if FLAGS.fnum is None:
+        fnum = len(dataset)
+    else:
+        fnum = FLAGS.fnum
+
+    for j in range(FLAGS.iters):
+        for i in tqdm(range(fnum)):
+            rads, labs, file = dataset[i]
+            print(file)
 
 
 def main(_):
