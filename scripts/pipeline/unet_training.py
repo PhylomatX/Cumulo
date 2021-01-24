@@ -26,6 +26,7 @@ flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
 flags.DEFINE_integer('stop', None, help='Epoch step where debugging should start.')
 flags.DEFINE_bool('testloader', False, help='Flag for choosing debugging version of dataloader.')
 flags.DEFINE_bool('debugging', False, help='Flag for debugging isolated dataloader.')
+flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
 FLAGS = flags.FLAGS
 
 
@@ -163,6 +164,9 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
                 if FLAGS.stop is not None and i == FLAGS.stop:
                     import ipdb
                     ipdb.set_trace()
+                if FLAGS.merged:
+                    inputs = inputs.reshape(-1, *tuple(inputs.shape[2:]))
+                    labels = labels.reshape(-1, *tuple(inputs.shape[2:]))
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
