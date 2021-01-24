@@ -7,7 +7,6 @@ import numpy as np
 from absl import app
 import torch.nn as nn
 from absl import flags
-from tqdm import tqdm
 import torch.optim as optim
 from cumulo.data.loader import CumuloDataset, TestDataset
 from cumulo.models.unet_weak import UNet_weak
@@ -127,7 +126,7 @@ def test_dataloder(dataloaders, num_epochs=1000, device='cuda'):
 
         # Each epoch has a training and validation phase
         for phase in dataloaders:
-            for inputs, labels in tqdm(dataloaders[phase]):
+            for inputs, labels in dataloaders[phase]:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
@@ -160,7 +159,7 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
             i = 0
 
             # Iterate over data.
-            for inputs, labels in tqdm(dataloaders[phase]):
+            for inputs, labels in dataloaders[phase]:
                 if FLAGS.stop is not None and i == FLAGS.stop:
                     import ipdb
                     ipdb.set_trace()
