@@ -1,15 +1,10 @@
 import glob
 import numpy as np
 import os
-from absl import app
-from absl import flags
 import netCDF4 as nc4
 import torch
 import h5py
 from torch.utils.data import Dataset
-
-flags.DEFINE_string('data_path', None, help='The dataset directory.')
-FLAGS = flags.FLAGS
 
 radiances = ['ev_250_aggr1km_refsb_1', 'ev_250_aggr1km_refsb_2', 'ev_1km_emissive_29', 'ev_1km_emissive_33',
              'ev_1km_emissive_34', 'ev_1km_emissive_35', 'ev_1km_emissive_36', 'ev_1km_refsb_26', 'ev_1km_emissive_27',
@@ -103,21 +98,22 @@ def get_low_labels_raw(labels):
 
 class CumuloDataset(Dataset):
 
-    def __init__(self, root_dir, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels, file_size=1):
+    def __init__(self, d_path, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None, file_size=1):
 
-        self.root_dir = root_dir
+        self.root_dir = d_path
         self.ext = ext
         self.file_size = file_size
-        self.file_paths = glob.glob(os.path.join(root_dir, "*." + ext))
+        self.file_paths = glob.glob(os.path.join(d_path, "*." + ext))
 
         if len(self.file_paths) == 0:
-            raise FileNotFoundError("no {} files in {}".format(ext, root_dir))
+            raise FileNotFoundError("no {} files in {}".format(ext, d_path))
 
         if indices is not None:
             self.file_paths = [self.file_paths[i] for i in indices]
 
         self.normalizer = normalizer
         self.label_preproc = label_preproc
+        self.tiler = tiler
 
     def __len__(self):
         if self.ext == "npz":
@@ -126,9 +122,12 @@ class CumuloDataset(Dataset):
             return len(self.file_paths) * self.file_size
 
     def __getitem__(self, idx):
-        if self.ext == "npz":
-            filename = self.file_paths[idx]
-            radiances, labels = read_npz(filename)
+        if self.ext == "nc":
+            radiances, properties, rois, labels = read_nc(self.file_paths[idx])
+            tiles, locations = self.tiler(radiances)
+            return self.file_paths[idx], tiles, locations, rois, labels
+        elif self.ext == "npz":
+            radiances, labels = read_npz(self.file_paths[idx])
         elif self.ext == "h5":
             file_num = int(idx / self.file_size)
             file_ix = idx % self.file_size
@@ -150,30 +149,18 @@ class CumuloDataset(Dataset):
 
 class TestDataset(Dataset):
 
-    def __init__(self, root_dir):
+    def __init__(self, root_dir: str, size: int = 60000 ):
 
         self.root_dir = root_dir
+        self.size = size
         self.file_paths = glob.glob(os.path.join(root_dir, "*.npz"))
 
     def __len__(self):
-        return 60000
+        return self.size
 
     def __getitem__(self, idx):
         idx = idx % len(self.file_paths)
         filename = self.file_paths[idx]
         radiances, labels = read_npz(filename)
         return torch.from_numpy(radiances), torch.from_numpy(labels[..., 0])
-
-
-
-def main(_):
-    load_path = FLAGS.data_path
-    dataset = CumuloDataset(load_path, ext="npz", label_preproc=None)
-    for instance in dataset:
-        filename, radiances, properties, rois, labels = instance
-
-
-if __name__ == '__main__':
-    app.run(main)
-
 

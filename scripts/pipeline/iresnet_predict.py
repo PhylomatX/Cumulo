@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # dataset loader
     tile_extr = TileExtractor()
     normalizer = Normalizer(m, s)
-    dataset = CumuloDataset(root_dir="../DATA/nc/", ext="nc", label_preproc=None, normalizer=normalizer,
+    dataset = CumuloDataset(d_path="../DATA/nc/", ext="nc", label_preproc=None, normalizer=normalizer,
                             tiler=tile_extr)
 
     use_cuda = torch.cuda.is_available()

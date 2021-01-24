@@ -83,9 +83,9 @@ class Normalizer(object):
         return (image - self.mean) / self.std
 
 
-class TileExtractor(object):
+class TileExtractor:
 
-    def __init__(self, t_width=3, t_height=3):
+    def __init__(self, t_width=128, t_height=128):
 
         self.t_width = t_width
         self.t_height = t_height
@@ -103,20 +103,14 @@ class TileExtractor(object):
 
         for i in range(nb_tiles_row):
             for j in range(nb_tiles_col):
-                tile = image[:, i * self.t_width: (i + 1) * self.t_width, j * self.t_height: (j + 1) * self.t_height]
-
-                tiles.append(tile)
-
-                locations.append(
-                    ((i * self.t_width, (i + 1) * self.t_width), (j * self.t_height, (j + 1) * self.t_height)))
+                tiles.append(image[:, i * self.t_width: (i + 1) * self.t_width, j * self.t_height: (j + 1) * self.t_height])
+                locations.append(((i * self.t_width, (i + 1) * self.t_width), (j * self.t_height, (j + 1) * self.t_height)))
 
         tiles = np.stack(tiles)
         locations = np.stack(locations)
 
         return tiles, locations
 
-
-# ------------------------------------------------------------ CUMULO HELPERS
 
 def get_tile_sampler(dataset, allowed_idx=None, ext="npz"):
     indices = []
