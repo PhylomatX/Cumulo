@@ -37,7 +37,7 @@ def bus_test(path: str, out_path: str):
 
 
 def main(_):
-    bus_test(FLAGS.npz_path, FLAGS.out_path)
+    bus_test(FLAGS.path, FLAGS.out_path)
 
 
 if __name__ == '__main__':
