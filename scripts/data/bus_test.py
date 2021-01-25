@@ -5,6 +5,8 @@ from tqdm import tqdm
 from absl import app
 from absl import flags
 import numpy as np
+import faulthandler
+faulthandler.enable()
 
 flags.DEFINE_string('path', None, help='Location of files')
 flags.DEFINE_string('ext', 'npz', help='Extension of files')
