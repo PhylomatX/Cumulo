@@ -5,7 +5,8 @@ from cumulo.data.loader import TestDataset
 from absl import app
 from absl import flags
 
-flags.DEFINE_string('npz_path', None, help='Location of npz files')
+flags.DEFINE_string('path', None, help='Location of files')
+flags.DEFINE_string('ext', 'npz', help='Extension of files')
 flags.DEFINE_string('out_path', None, help='Directory where merged tiles should be saved.')
 flags.DEFINE_integer('iters', 20, help='Number of iterations')
 flags.DEFINE_integer('fnum', None, help='Number of files')
@@ -13,8 +14,8 @@ flags.DEFINE_integer('stop', None, help='Step for debugging')
 FLAGS = flags.FLAGS
 
 
-def bus_test(npz_path: str, out_path: str):
-    dataset = TestDataset(npz_path)
+def bus_test(path: str, out_path: str):
+    dataset = TestDataset(path, ext=FLAGS.ext)
     files = dataset.get_files()
     if not os.path.exists(out_path):
         os.makedirs(out_path)

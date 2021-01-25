@@ -4,6 +4,7 @@ import os
 import netCDF4 as nc4
 import torch
 import h5py
+import pickle as pkl
 from torch.utils.data import Dataset
 
 radiances = ['ev_250_aggr1km_refsb_1', 'ev_250_aggr1km_refsb_2', 'ev_1km_emissive_29', 'ev_1km_emissive_33',
@@ -116,7 +117,7 @@ class CumuloDataset(Dataset):
         self.tiler = tiler
 
     def __len__(self):
-        if self.ext == "npz":
+        if self.ext in ["npz", "pkl"]:
             return len(self.file_paths)
         elif self.ext == "h5":
             return len(self.file_paths) * self.file_size
@@ -128,6 +129,11 @@ class CumuloDataset(Dataset):
             return self.file_paths[idx], tiles, locations, rois, labels
         elif self.ext == "npz":
             radiances, labels = read_npz(self.file_paths[idx])
+        elif self.ext == "pkl":
+            with open(self.file_paths[idx], 'rb') as f:
+                sample = pkl.load(f)
+            radiances = sample[0]
+            labels = sample[1]
         elif self.ext == "h5":
             file_num = int(idx / self.file_size)
             file_ix = idx % self.file_size
@@ -149,9 +155,10 @@ class CumuloDataset(Dataset):
 
 class TestDataset(Dataset):
 
-    def __init__(self, d_path: str):
+    def __init__(self, d_path: str, ext: str = "npz"):
         self.root_dir = d_path
-        self.file_paths = glob.glob(os.path.join(d_path, "*.npz"))
+        self.file_paths = glob.glob(os.path.join(d_path, f"*.{ext}"))
+        self.ext = ext
 
     def get_files(self):
         return self.file_paths
@@ -161,8 +168,14 @@ class TestDataset(Dataset):
 
     def __getitem__(self, idx):
         filename = self.file_paths[idx]
-        radiances, labels = read_npz(filename)
-        return radiances, labels[..., 0], self.file_paths[idx]
+        if self.ext == "npz":
+            radiances, labels = read_npz(filename)
+        elif self.ext == "pkl":
+            with open(filename, 'rb') as f:
+                sample = pkl.load(f)
+            radiances = sample[0]
+            labels = sample[1]
+        return radiances, labels[..., 0], filename
 
 
 class TestDatasetTorch(Dataset):
