@@ -1,7 +1,6 @@
 import os
 import glob
 import pickle as pkl
-from tqdm import tqdm
 from absl import app
 from absl import flags
 import numpy as np
@@ -61,12 +60,12 @@ def bus_test(path: str, out_path: str):
         fnum = FLAGS.fnum
 
     for j in range(FLAGS.iters):
-        for i in tqdm(range(fnum)):
+        for i in range(fnum):
             if FLAGS.stop is not None and i == FLAGS.stop:
                 import ipdb
                 ipdb.set_trace()
             rads, labs, file = dataset[i]
-            print(file)
+            print(f'{j}_{i}')
 
 
 def main(_):
