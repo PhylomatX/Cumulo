@@ -43,27 +43,36 @@ def make_directory(dir_path):
         os.makedirs(dir_path)
 
 
-def get_dataset_statistics(dataset, nb_classes, tile_size, nb_tiles=None):
+def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
     weights = np.zeros(nb_classes)
     m = np.zeros(13)
     s = np.zeros(13)
-    if nb_tiles is None:
-        nb_tiles = len(dataset)
+    if nb_samples is None:
+        nb_samples = len(dataset)
+    nb_tiles = nb_samples
+    rads, labels = dataset[0]
+    if len(rads.shape) == 4:
+        nb_tiles *= rads.shape[0]
 
-    for sample in tqdm(range(nb_tiles)):
+    batch_size = 1
+    for sample in tqdm(range(nb_samples)):
         rads, labels = dataset[sample]
-        rads = rads.numpy()
-        labels = labels.numpy()
-        weights += np.histogram(labels, bins=range(nb_classes + 1), normed=False)[0]
-        m += np.mean(rads, axis=(1, 2))
+        if len(rads.shape) == 4:
+            batch_size = rads.shape[0]
+        for i in range(batch_size):
+            crads = rads[i].numpy()
+            clabels = labels[i].numpy()
+            weights += np.histogram(clabels, bins=range(nb_classes + 1), normed=False)[0]
+            m += np.mean(crads, axis=(1, 2))
 
     m /= nb_tiles
     m = m.reshape((13, 1, 1))
 
-    for sample in tqdm(range(nb_tiles)):
+    for sample in tqdm(range(nb_samples)):
         rads, labels = dataset[sample]
-        rads = rads.numpy()
-        s += np.sum((rads - m)**2, (1, 2))
+        for i in range(batch_size):
+            crads = rads[i].numpy()
+            s += np.sum((crads - m)**2, (1, 2))
 
     s /= nb_tiles * tile_size ** 2
     std = np.sqrt(s)

@@ -15,7 +15,7 @@ FLAGS = flags.FLAGS
 
 def main(_):
     dataset = CumuloDataset(FLAGS.npz_path, ext="npz")
-    weights, class_weights, m, std = get_dataset_statistics(dataset, FLAGS.class_num, tile_size=FLAGS.tile_size, nb_tiles=FLAGS.nb_tiles)
+    weights, class_weights, m, std = get_dataset_statistics(dataset, FLAGS.class_num, tile_size=FLAGS.tile_size, nb_samples=FLAGS.nb_tiles)
     print(weights)
     print(class_weights)
     print(m.squeeze())
