@@ -155,7 +155,7 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
             i = 0
 
             # Iterate over data.
-            for inputs, labels in dataloaders[phase]:
+            for inputs, labels in tqdm(dataloaders[phase]):
                 if FLAGS.stop is not None and i == FLAGS.stop:
                     import ipdb
                     ipdb.set_trace()
