@@ -47,7 +47,7 @@ def main(_):
             removed += 1
             print(f'Removed {file}')
         else:
-            os.rename(os.path.join(FLAGS.nc_path, filename), clean + '/' + filename)
+            os.rename(os.path.join(FLAGS.nc_path, filename), os.path.join(clean, filename))
     print(f'{removed} nc files have been removed because of artefacts.')
 
 
