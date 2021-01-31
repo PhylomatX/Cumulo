@@ -47,11 +47,11 @@ def main(_):
             import ipdb
             ipdb.set_trace()
         if check_size(radiances) or check_for_stripe_pattern(radiances):
-            os.rename(os.path.join(FLAGS.nc_path, filename), os.path.join(artefacts, filename))
+            os.rename(filename, filename.replace(FLAGS.nc_path, artefacts))
             removed += 1
             print(f'Removed {file}')
         else:
-            os.rename(os.path.join(FLAGS.nc_path, filename), os.path.join(clean, filename))
+            os.rename(filename, filename.replace(FLAGS.nc_path, clean))
     print(f'{removed} nc files have been removed because of artefacts.')
 
 
