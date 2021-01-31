@@ -73,8 +73,9 @@ def main(_):
                 mf_labels = include_cloud_mask(get_most_frequent_label(labels), cloud_mask)
                 low_labels = include_cloud_mask(labels[..., 0], cloud_mask)
                 low_labels_raw = labels[..., 0]
+                mf_labels_raw = get_most_frequent_label(labels)
 
-                np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, low_labels, low_labels_raw)))
+                np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, low_labels, low_labels_raw, mf_labels_raw)))
                 # np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], properties=tiles[1].data[tile],
                 #          cloud_mask=tiles[2].data[tile], labels=tiles[3].data[tile], location=positions[tile])
 

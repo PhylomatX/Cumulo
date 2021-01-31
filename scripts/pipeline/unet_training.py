@@ -9,7 +9,7 @@ from absl import app
 import torch.nn as nn
 from absl import flags
 import torch.optim as optim
-from cumulo.data.loader import CumuloDataset, TestDatasetTorch
+from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
 from cumulo.utils.utils import Normalizer, get_dataset_statistics
@@ -23,9 +23,6 @@ flags.DEFINE_integer('batch_size', 32, help='Batch size for training and validat
 flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
 flags.DEFINE_bool('val', False, help='Flag for validation after each epoch.')
 flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
-flags.DEFINE_integer('stop', None, help='Epoch step where debugging should start.')
-flags.DEFINE_bool('testloader', False, help='Flag for choosing debugging version of dataloader.')
-flags.DEFINE_bool('debugging', False, help='Flag for debugging isolated dataloader.')
 flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
 FLAGS = flags.FLAGS
 
@@ -81,17 +78,11 @@ def main(_):
         np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
 
-    if not FLAGS.testloader:
-        train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx)
-    else:
-        train_dataset = TestDatasetTorch(FLAGS.d_path)
+    train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx)
 
     if FLAGS.val:
         print("Training with validation!")
-        if not FLAGS.testloader:
-            val_dataset = CumuloDataset(FLAGS.d_path, "npz", normalizer=normalizer, indices=val_idx)
-        else:
-            val_dataset = TestDatasetTorch(FLAGS.d_path)
+        val_dataset = CumuloDataset(FLAGS.d_path, "npz", normalizer=normalizer, indices=val_idx)
         dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers),
                        'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=FLAGS.num_workers)}
         dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
@@ -114,17 +105,7 @@ def main(_):
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     # Start training
-    if FLAGS.debugging:
-        test_dataloder(dataloaders, num_epochs=nb_epochs, device=device)
-    else:
-        metrics = train(model, FLAGS.m_path, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
-
-
-def test_dataloder(dataloaders, num_epochs=1000, device='cuda'):
-    for epoch in range(num_epochs):
-        for phase in dataloaders:
-            for inputs, labels in tqdm(dataloaders[phase]):
-                continue
+    metrics = train(model, FLAGS.m_path, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
 
 
 def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
@@ -156,9 +137,6 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
 
             # Iterate over data.
             for inputs, labels in tqdm(dataloaders[phase]):
-                if FLAGS.stop is not None and i == FLAGS.stop:
-                    import ipdb
-                    ipdb.set_trace()
                 if FLAGS.merged:
                     inputs = inputs.reshape(-1, *tuple(inputs.shape[2:]))
                     labels = labels.reshape(-1, *tuple(inputs.shape[2:]))

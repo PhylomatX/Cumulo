@@ -126,6 +126,13 @@ class CumuloDataset(Dataset):
         if self.ext == "nc":
             radiances, properties, rois, labels = read_nc(self.file_paths[idx])
             tiles, locations = self.tiler(radiances)
+
+            if self.normalizer is not None:
+                tiles = self.normalizer(tiles)
+
+            if self.label_preproc is not None:
+                labels = self.label_preproc(labels)
+
             return self.file_paths[idx], tiles, locations, rois, labels
         elif self.ext == "npz":
             radiances, labels = read_npz(self.file_paths[idx])
@@ -151,43 +158,3 @@ class CumuloDataset(Dataset):
 
     def __str__(self):
         return 'CUMULO'
-
-
-class TestDataset(Dataset):
-
-    def __init__(self, d_path: str, ext: str = "npz"):
-        self.root_dir = d_path
-        self.file_paths = glob.glob(os.path.join(d_path, f"*.{ext}"))
-        self.ext = ext
-
-    def get_files(self):
-        return self.file_paths
-
-    def __len__(self):
-        return len(self.file_paths)
-
-    def __getitem__(self, idx):
-        filename = self.file_paths[idx]
-        if self.ext == "npz":
-            radiances, labels = read_npz(filename)
-        elif self.ext == "pkl":
-            with open(filename, 'rb') as f:
-                sample = pkl.load(f)
-            radiances = sample[0]
-            labels = sample[1]
-        return radiances, labels[..., 0], filename
-
-
-class TestDatasetTorch(Dataset):
-    def __init__(self, d_path: str):
-        self.dataset = TestDataset(d_path)
-
-    def get_files(self):
-        return self.dataset.get_files()
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        rads, labs, file = self.dataset[idx]
-        return torch.from_numpy(rads), torch.from_numpy(labs)
