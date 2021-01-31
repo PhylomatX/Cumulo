@@ -29,13 +29,25 @@ def check_for_stripe_pattern(radiances) -> bool:
 def main(_):
     files = os.listdir(FLAGS.nc_path)
     removed = 0
+    artefacts = os.path.join(FLAGS.nc_path, 'artefacts')
+    if not os.path.exists(artefacts):
+        os.makedirs(artefacts)
+    clean = os.path.join(FLAGS.nc_path, 'clean')
+    if not os.path.exists(clean):
+        os.makedirs(clean)
     for file in tqdm(files):
         filename = os.path.join(FLAGS.nc_path, file)
-        radiances, properties, cloud_mask, labels = read_nc(filename)
+        try:
+            radiances, properties, cloud_mask, labels = read_nc(filename)
+        except:
+            print('Invalid file')
+            continue
         if check_size(radiances) or check_for_stripe_pattern(radiances):
-            os.remove(filename)
+            os.rename(os.path.join(FLAGS.nc_path, filename), artefacts + '/' + filename)
             removed += 1
             print(f'Removed {file}')
+        else:
+            os.rename(os.path.join(FLAGS.nc_path, filename), clean + '/' + filename)
     print(f'{removed} nc files have been removed because of artefacts.')
 
 
