@@ -6,6 +6,7 @@ from tqdm import tqdm
 from cumulo.data.nc_loader import read_nc
 
 flags.DEFINE_string('nc_path', None, help='Directory where nc files are located.')
+flags.DEFINE_bool('ipdb', False, help='Debugging.')
 FLAGS = flags.FLAGS
 
 
@@ -42,8 +43,11 @@ def main(_):
         except:
             print('Invalid file')
             continue
+        if FLAGS.ipdb:
+            import ipdb
+            ipdb.set_trace()
         if check_size(radiances) or check_for_stripe_pattern(radiances):
-            os.rename(os.path.join(FLAGS.nc_path, filename), artefacts + '/' + filename)
+            os.rename(os.path.join(FLAGS.nc_path, filename), os.path.join(artefacts, filename))
             removed += 1
             print(f'Removed {file}')
         else:
