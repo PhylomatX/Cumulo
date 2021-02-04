@@ -161,7 +161,8 @@ def extract_cloudy_labelled_tiles(swath_tuple, cloud_mask, label_mask, tile_size
     return tiles, positions
 
 
-def sample_random_tiles_from_track(radiances, properties, cloud_mask, labels, tile_size=32, redundancy=1):
+def sample_random_tiles_from_track(radiances, properties, cloud_mask, labels, tile_size=32, verbose=False,
+                                   batch_size=None):
     # sampling tiles from border region is not allowed
     allowed_pixels = get_sampling_mask((MAX_WIDTH, MAX_HEIGHT), tile_size)
     # get pixels along satellite track
@@ -184,14 +185,22 @@ def sample_random_tiles_from_track(radiances, properties, cloud_mask, labels, ti
                 mask[ix] = False
             else:
                 last_center = center
-
-    print(f'Used: {len(potential_pixels_idx)-not_used}. Total: {len(potential_pixels_idx)}')
+    if verbose:
+        print(f'Used: {len(potential_pixels_idx)-not_used}. Total: {len(potential_pixels_idx)}')
 
     potential_pixels_idx = potential_pixels_idx[mask]
     potential_pixels_idx_orig = potential_pixels_idx
 
-    for i in range(redundancy-1):
-        potential_pixels_idx = np.vstack((potential_pixels_idx, potential_pixels_idx_orig))
+    if batch_size is not None:
+        if len(potential_pixels_idx) > batch_size:
+            idcs = np.random.choice(potential_pixels_idx, batch_size, replace=False)
+            potential_pixels_idx = potential_pixels_idx[idcs]
+        else:
+            while len(potential_pixels_idx) < batch_size:
+                potential_pixels_idx = np.vstack((potential_pixels_idx, potential_pixels_idx_orig))
+            idcs = np.random.choice(potential_pixels_idx, batch_size, replace=False)
+            potential_pixels_idx = potential_pixels_idx[idcs]
+
     random_offsets = np.random.randint(-(tile_size // 2) + 1, (tile_size // 2) - 1, potential_pixels_idx.shape)
     potential_pixels_idx += random_offsets
     offset, offset_2 = get_tile_offsets(tile_size)

@@ -4,10 +4,13 @@ from absl import flags
 import numpy as np
 from tqdm import tqdm
 from cumulo.data.nc_loader import read_nc
+from cumulo.data.nc_tile_extractor import get_sampling_mask, get_label_mask
 
 flags.DEFINE_string('nc_path', None, help='Directory where nc files are located.')
-flags.DEFINE_bool('ipdb', False, help='Debugging.')
+flags.DEFINE_integer('size', 128, help='Tile size.')
 FLAGS = flags.FLAGS
+
+MAX_WIDTH, MAX_HEIGHT = 1354, 2030
 
 
 def check_size(radiances):
@@ -27,6 +30,18 @@ def check_for_stripe_pattern(radiances) -> bool:
     return erroneous
 
 
+def check_for_empty_labels(tile_size, labels):
+    allowed_pixels = get_sampling_mask((MAX_WIDTH, MAX_HEIGHT), tile_size)
+    label_mask = get_label_mask(labels)
+    potential_pixels = allowed_pixels & label_mask
+    potential_pixels_idx = np.array(list(zip(*np.where(potential_pixels[0] == 1))))
+
+    if len(potential_pixels_idx) == 0:
+        return True
+    else:
+        return False
+
+
 def main(_):
     files = os.listdir(FLAGS.nc_path)
     removed = 0
@@ -43,10 +58,7 @@ def main(_):
         except:
             print('Invalid file')
             continue
-        if FLAGS.ipdb:
-            import ipdb
-            ipdb.set_trace()
-        if check_size(radiances) or check_for_stripe_pattern(radiances):
+        if check_size(radiances) or check_for_stripe_pattern(radiances) or check_for_empty_labels(FLAGS.size, labels):
             os.rename(filename, filename.replace(FLAGS.nc_path, artefacts + '/'))
             removed += 1
             print(f'Removed {file}')

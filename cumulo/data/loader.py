@@ -3,26 +3,29 @@ import numpy as np
 import os
 import netCDF4 as nc4
 import torch
-import h5py
-import pickle as pkl
 from torch.utils.data import Dataset
+from cumulo.data.nc_tile_extractor import sample_random_tiles_from_track
 
-radiances = ['ev_250_aggr1km_refsb_1', 'ev_250_aggr1km_refsb_2', 'ev_1km_emissive_29', 'ev_1km_emissive_33',
-             'ev_1km_emissive_34', 'ev_1km_emissive_35', 'ev_1km_emissive_36', 'ev_1km_refsb_26', 'ev_1km_emissive_27',
-             'ev_1km_emissive_20', 'ev_1km_emissive_21', 'ev_1km_emissive_22', 'ev_1km_emissive_23']
-coordinates = ['latitude', 'longitude']
-properties = ['cloud_water_path', 'cloud_optical_thickness', 'cloud_effective_radius', 'cloud_phase_optical_properties',
-              'cloud_top_pressure', 'cloud_top_height', 'cloud_top_temperature', 'cloud_emissivity',
-              'surface_temperature']
-rois = 'cloud_mask'
-labels = 'cloud_layer_type'
+radiances_nc = ['ev_250_aggr1km_refsb_1', 'ev_250_aggr1km_refsb_2', 'ev_1km_emissive_29', 'ev_1km_emissive_33',
+                'ev_1km_emissive_34', 'ev_1km_emissive_35', 'ev_1km_emissive_36', 'ev_1km_refsb_26',
+                'ev_1km_emissive_27',
+                'ev_1km_emissive_20', 'ev_1km_emissive_21', 'ev_1km_emissive_22', 'ev_1km_emissive_23']
+coordinates_nc = ['latitude', 'longitude']
+properties_nc = ['cloud_water_path', 'cloud_optical_thickness', 'cloud_effective_radius',
+                 'cloud_phase_optical_properties',
+                 'cloud_top_pressure', 'cloud_top_height', 'cloud_top_temperature', 'cloud_emissivity',
+                 'surface_temperature']
+rois_nc = 'cloud_mask'
+labels_nc = 'cloud_layer_type'
 
 
 # ------------------------------------------------------------ CUMULO HELPERS
 
 def get_class_occurrences(labels):
     """ 
-    Takes in a numpy.ndarray of size (nb_instances, W, H, nb_layers=10) describing for each pixel the types of clouds identified at each of the 10 heights and returns a numpy.ndarray of size (nb_points, 8) counting the number of times one of the 8 type of clouds was spotted vertically over a whole instance.
+    Takes in a numpy.ndarray of size (nb_instances, W, H, nb_layers=10) describing for each pixel the types of
+    clouds identified at each of the 10 heights and returns a numpy.ndarray of size (nb_points, 8) counting the
+    number of times one of the 8 type of clouds was spotted vertically over a whole instance.
     The height information is then lost. 
     """
     occurrences = np.zeros((labels.shape[0], 8))
@@ -69,10 +72,10 @@ def read_nc(nc_file):
 
     file = nc4.Dataset(nc_file, 'r', format='NETCDF4')
 
-    f_radiances = np.vstack([file.variables[name][:] for name in radiances])
-    f_properties = np.vstack([file.variables[name][:] for name in properties])
-    f_rois = file.variables[rois][:]
-    f_labels = file.variables[labels][:]
+    f_radiances = np.vstack([file.variables[name][:] for name in radiances_nc])
+    f_properties = np.vstack([file.variables[name][:] for name in properties_nc])
+    f_rois = file.variables[rois_nc][:]
+    f_labels = file.variables[labels_nc][:]
 
     return f_radiances, f_properties, f_rois, f_labels
 
@@ -97,9 +100,16 @@ def get_low_labels_raw(labels):
     return labels[..., 2]
 
 
+def include_cloud_mask(labels, cloud_mask):
+    labels = labels.copy()
+    labels[labels >= 0] += 1
+    return labels * cloud_mask
+
+
 class CumuloDataset(Dataset):
 
-    def __init__(self, d_path, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None, file_size=1):
+    def __init__(self, d_path, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
+                 file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, redundancy: int = 1):
 
         self.root_dir = d_path
         self.ext = ext
@@ -115,46 +125,47 @@ class CumuloDataset(Dataset):
         self.normalizer = normalizer
         self.label_preproc = label_preproc
         self.tiler = tiler
+        self.pred = pred
+        self.batch_size = batch_size
+        self.tile_size = tile_size
+        self.redundancy = redundancy
 
     def __len__(self):
-        if self.ext in ["npz", "pkl"]:
+        if self.ext == "npz":
             return len(self.file_paths)
-        elif self.ext == "h5":
-            return len(self.file_paths) * self.file_size
 
     def __getitem__(self, idx):
         if self.ext == "nc":
-            radiances, properties, rois, labels = read_nc(self.file_paths[idx])
-            tiles, locations = self.tiler(radiances)
+            radiances, properties, cloud_mask, labels = read_nc(self.file_paths[idx])
+            if self.pred:
+                # Prediction mode
+                tiles, locations = self.tiler(radiances)
+                if self.normalizer is not None:
+                    tiles = self.normalizer(tiles)
+                if self.label_preproc is not None:
+                    labels = self.label_preproc(labels)
+                return self.file_paths[idx], tiles, locations, cloud_mask, labels
+            else:
+                # On-the-fly tile generation
+                tiles, _ = sample_random_tiles_from_track(radiances, properties, cloud_mask, labels,
+                                                          tile_size=self.tile_size)
+                radiances = np.zeros((self.batch_size, 13, self.tile_size, self.tile_size))
+                labels = np.zeros((self.batch_size, self.tile_size, self.tile_size))
+                for tile in range(self.batch_size):
+                    labels = tiles[3].data[tile].squeeze()
+                    cloud_mask = tiles[2].data[tile].squeeze()
+                    low_labels = include_cloud_mask(labels[..., 0], cloud_mask)
+                    radiances[tile] = tiles[0].data[tile]
+                    labels[tile] = low_labels
+                return torch.from_numpy(radiances), torch.from_numpy(labels)
 
-            if self.normalizer is not None:
-                tiles = self.normalizer(tiles)
-
-            if self.label_preproc is not None:
-                labels = self.label_preproc(labels)
-
-            return self.file_paths[idx], tiles, locations, rois, labels
         elif self.ext == "npz":
             radiances, labels = read_npz(self.file_paths[idx])
-        elif self.ext == "pkl":
-            with open(self.file_paths[idx], 'rb') as f:
-                sample = pkl.load(f)
-            radiances = sample[0]
-            labels = sample[1]
-        elif self.ext == "h5":
-            file_num = int(idx / self.file_size)
-            file_ix = idx % self.file_size
-            file = h5py.File(self.file_paths[file_num], "r+")
-            radiances = np.array(file["/radiances"]).astype(np.float32)[file_ix]
-            labels = np.array(file["/labels"]).astype(np.int8)[file_ix]
-
-        if self.normalizer is not None:
-            radiances = self.normalizer(radiances)
-
-        if self.label_preproc is not None:
-            labels = self.label_preproc(labels)
-
-        return torch.from_numpy(radiances), torch.from_numpy(labels)
+            if self.normalizer is not None:
+                radiances = self.normalizer(radiances)
+            if self.label_preproc is not None:
+                labels = self.label_preproc(labels)
+            return torch.from_numpy(radiances), torch.from_numpy(labels)
 
     def __str__(self):
         return 'CUMULO'

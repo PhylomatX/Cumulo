@@ -64,7 +64,7 @@ def main(_):
             os.makedirs(save_dir)
 
         tiles, positions = sample_random_tiles_from_track(radiances, properties, cloud_mask, labels,
-                                                          tile_size=FLAGS.size, redundancy=FLAGS.redundancy)
+                                                          tile_size=FLAGS.size)
 
         if tiles is not None:
             for tile in range(tiles[0].shape[0]):
