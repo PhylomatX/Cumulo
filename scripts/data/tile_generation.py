@@ -19,7 +19,6 @@ def get_most_frequent_label(labels):
 
         Returns the most frequent label for each whole instance.
     """
-
     labels = labels.squeeze()
     mask = np.any(labels != -1, axis=2)
     lpixels = labels[mask]
@@ -41,6 +40,7 @@ def get_most_frequent_label(labels):
 
 
 def include_cloud_mask(labels, cloud_mask):
+    labels = labels.copy()
     labels[labels >= 0] += 1
     return labels * cloud_mask
 
@@ -70,14 +70,12 @@ def main(_):
             for tile in range(tiles[0].shape[0]):
                 labels = tiles[3].data[tile].squeeze()
                 cloud_mask = tiles[2].data[tile].squeeze()
-                mf_labels = include_cloud_mask(get_most_frequent_label(labels), cloud_mask)
+                mf_labels_raw = get_most_frequent_label(labels)
+                mf_labels = include_cloud_mask(mf_labels_raw, cloud_mask)
                 low_labels = include_cloud_mask(labels[..., 0], cloud_mask)
                 low_labels_raw = labels[..., 0]
-                mf_labels_raw = get_most_frequent_label(labels)
 
                 np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], labels=np.dstack((mf_labels, low_labels, low_labels_raw, mf_labels_raw)))
-                # np.savez(save_name + '_' + str(tile), radiances=tiles[0].data[tile], properties=tiles[1].data[tile],
-                #          cloud_mask=tiles[2].data[tile], labels=tiles[3].data[tile], location=positions[tile])
 
         if FLAGS.remove:
             os.remove(filename)

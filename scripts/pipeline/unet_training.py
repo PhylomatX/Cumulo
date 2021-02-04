@@ -3,6 +3,7 @@ import time
 import torch
 import random
 import glob
+import pickle as pkl
 from tqdm import tqdm
 import numpy as np
 from absl import app
@@ -24,6 +25,7 @@ flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
 flags.DEFINE_bool('val', False, help='Flag for validation after each epoch.')
 flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
 flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
+flags.DEFINE_bool('examples', False, help='Save some training examples in each epoch')
 FLAGS = flags.FLAGS
 
 
@@ -43,6 +45,7 @@ def main(_):
 
     if not os.path.exists(FLAGS.m_path):
         os.makedirs(FLAGS.m_path)
+        os.makedirs(os.path.join(FLAGS.m_path, 'examples'))
 
     device = 'cpu'
     if torch.cuda.is_available():
@@ -105,7 +108,7 @@ def main(_):
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     # Start training
-    metrics = train(model, FLAGS.m_path, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
+    train(model, FLAGS.m_path, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
 
 
 def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
@@ -117,8 +120,7 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
     best_acc = 0.0
     best_loss = None
 
-    metrics = {'train_loss': [], 'train_acc': [], 'train_segacc': [],
-               'val_loss': [], 'val_acc': [], 'val_segacc': []}
+    metrics = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
 
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
@@ -136,10 +138,13 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
             i = 0
 
             # Iterate over data.
-            for inputs, labels in tqdm(dataloaders[phase]):
+            for sample_ix, sample in enumerate(tqdm(dataloaders[phase])):
+                inputs, labels = sample
+
                 if FLAGS.merged:
                     inputs = inputs.reshape(-1, *tuple(inputs.shape[2:]))
                     labels = labels.reshape(-1, *tuple(inputs.shape[2:]))
+
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
@@ -173,6 +178,13 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
                 running_corrects += np.sum(output[mask] == labels[mask])
                 i += 1
 
+                # save training examples
+                if FLAGS.examples:
+                    if sample_ix == 0:
+                        inputs = inputs.cpu().detach().numpy()
+                        np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'), inputs=inputs, labels=labels, outputs=output,
+                                 corrects=np.sum(output[mask] == labels[mask]))
+
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects / dataset_sizes[phase]
 
@@ -185,7 +197,7 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
             print('{} loss: {:.4f}, single pixel accuracy: {:.4f}'.format(
                 phase, epoch_loss, epoch_acc))
 
-            # deep copy the model
+            # save models
             if phase == 'val' and epoch_acc > best_acc:
                 best_acc = epoch_acc
                 torch.save({'model_state_dict': model.state_dict()}, os.path.join(m_path, f'val_best.pth'))
@@ -194,12 +206,13 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
                 best_loss = epoch_loss
                 torch.save({'model_state_dict': model.state_dict()}, os.path.join(m_path, f'train_best.pth'))
 
+        with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
+            pkl.dump(metrics, f)
+
     time_elapsed = time.time() - t0
     print('Training complete in {:.0f}m {:.0f}s'.format(
         time_elapsed // 60, time_elapsed % 60))
     print('Best val single pixel accuracy: {:4f}'.format(best_acc))
-
-    return metrics
 
 
 if __name__ == '__main__':
