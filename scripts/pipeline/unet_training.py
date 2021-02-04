@@ -17,11 +17,12 @@ from cumulo.utils.utils import Normalizer, get_dataset_statistics
 
 flags.DEFINE_string('d_path', None, help='Data path')
 flags.DEFINE_string('m_path', None, help='Model path')
-flags.DEFINE_string('filetype', None, help='nc')
+flags.DEFINE_string('filetype', 'nc', help='File type for dataset')
 flags.DEFINE_integer('r_seed', 1, help='Random seed')
 flags.DEFINE_integer('nb_epochs', 100, help='Number of epochs')
 flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloader.')
-flags.DEFINE_integer('batch_size', 32, help='Batch size for training and validation.')
+flags.DEFINE_integer('bs', 32, help='Batch size for training and validation.')
+flags.DEFINE_integer('dataset_bs', 32, help='Batch size for training and validation.')
 flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
 flags.DEFINE_integer('tile_size', 128, help='Tile size.')
 flags.DEFINE_integer('center_distance', None, help='Distance between base points of tile extraction.')
@@ -37,7 +38,7 @@ def main(_):
     # Initialize parameters and prepare data
     nb_epochs = FLAGS.nb_epochs
     nb_classes = 9
-    batch_size = FLAGS.batch_size
+    batch_size = FLAGS.bs
     lr = 0.001
     weight_decay = 0.0
 
@@ -72,7 +73,7 @@ def main(_):
     class_weights = torch.from_numpy(class_weights).float()
 
     if FLAGS.tile_num is None:
-        tile_num = len(glob.glob(os.path.join(FLAGS.d_path, "*.npz")))
+        tile_num = len(glob.glob(os.path.join(FLAGS.d_path, "*." + FLAGS.filetype)))
     else:
         tile_num = FLAGS.tile_num
     idx = np.arange(tile_num)
@@ -85,12 +86,12 @@ def main(_):
         np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
 
-    train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=batch_size,
+    train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
                                   tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
 
     if FLAGS.val:
         print("Training with validation!")
-        val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=batch_size,
+        val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
                                     tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
         dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers),
                        'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=FLAGS.num_workers)}
