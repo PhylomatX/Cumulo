@@ -16,6 +16,7 @@ MAX_WIDTH, MAX_HEIGHT = 1354, 2030
 def check_size(radiances):
     """ Ensures that the radiances of all images have the same shape. """
     if radiances.shape != (13, 1354, 2030):
+        print('Invalid size!')
         return True
     return False
 
@@ -25,6 +26,7 @@ def check_for_stripe_pattern(radiances) -> bool:
     erroneous = False
     for i in range(radiances.shape[2] - 1):
         if np.all(radiances[0][:, i] == radiances[0][:, i + 1]):
+            print('Artefacts!')
             erroneous = True
             break
     return erroneous
@@ -37,6 +39,7 @@ def check_for_empty_labels(tile_size, labels):
     potential_pixels_idx = np.array(list(zip(*np.where(potential_pixels[0] == 1))))
 
     if len(potential_pixels_idx) == 0:
+        print('No labels!')
         return True
     else:
         return False
@@ -61,7 +64,6 @@ def main(_):
         if check_size(radiances) or check_for_stripe_pattern(radiances) or check_for_empty_labels(FLAGS.size, labels):
             os.rename(filename, filename.replace(FLAGS.nc_path, artefacts + '/'))
             removed += 1
-            print(f'Removed {file}')
         else:
             os.rename(filename, filename.replace(FLAGS.nc_path, clean + '/'))
     print(f'{removed} nc files have been removed because of artefacts.')
