@@ -13,7 +13,9 @@ def main(_):
     for file in files:
         data = np.load(os.path.join(FLAGS.p_path, file))
         fig, axs = plt.subplots(1, 2, figsize=(15, 5))
+        axs[0].set_title('Prediction')
         axs[0].imshow(data['prediction'])
+        axs[1].set_title('Ground Truth (Cloud mask + label track)')
         axs[1].imshow(data['labels'])
         plt.show()
         plt.close()
