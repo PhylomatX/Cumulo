@@ -63,8 +63,8 @@ def main(_):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        tiles, positions = sample_random_tiles_from_track(radiances, properties, cloud_mask, labels,
-                                                          tile_size=FLAGS.size)
+        tiles, positions = sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=FLAGS.size,
+                                                          properties=properties)
 
         if tiles is not None:
             for tile in range(tiles[0].shape[0]):

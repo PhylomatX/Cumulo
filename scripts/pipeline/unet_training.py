@@ -17,15 +17,19 @@ from cumulo.utils.utils import Normalizer, get_dataset_statistics
 
 flags.DEFINE_string('d_path', None, help='Data path')
 flags.DEFINE_string('m_path', None, help='Model path')
+flags.DEFINE_string('filetype', None, help='nc')
 flags.DEFINE_integer('r_seed', 1, help='Random seed')
 flags.DEFINE_integer('nb_epochs', 100, help='Number of epochs')
 flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloader.')
 flags.DEFINE_integer('batch_size', 32, help='Batch size for training and validation.')
 flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
+flags.DEFINE_integer('tile_size', 128, help='Tile size.')
+flags.DEFINE_integer('center_distance', None, help='Distance between base points of tile extraction.')
 flags.DEFINE_bool('val', False, help='Flag for validation after each epoch.')
 flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
 flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
 flags.DEFINE_bool('examples', False, help='Save some training examples in each epoch')
+flags.DEFINE_integer('examples_num', None, help='How many samples should get saved as example?')
 FLAGS = flags.FLAGS
 
 
@@ -77,15 +81,17 @@ def main(_):
         train_idx = np.load(os.path.join(FLAGS.m_path, 'train_idx.npy'))
         val_idx = np.load(os.path.join(FLAGS.m_path, 'val_idx.npy'))
     except FileNotFoundError:
-        train_idx, val_idx = np.split(idx, [int(.9 * tile_num)])
+        train_idx, val_idx = np.split(idx, [int(.95 * tile_num)])
         np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
 
-    train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx)
+    train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=batch_size,
+                                  tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
 
     if FLAGS.val:
         print("Training with validation!")
-        val_dataset = CumuloDataset(FLAGS.d_path, "npz", normalizer=normalizer, indices=val_idx)
+        val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=batch_size,
+                                    tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
         dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers),
                        'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=FLAGS.num_workers)}
         dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
@@ -182,8 +188,11 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
                 if FLAGS.examples:
                     if sample_ix == 0:
                         inputs = inputs.cpu().detach().numpy()
-                        np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'), inputs=inputs, labels=labels, outputs=output,
-                                 corrects=np.sum(output[mask] == labels[mask]))
+                        examples_num = FLAGS.examples_num
+                        if examples_num is None:
+                            examples_num = inputs.shape[0]
+                        np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'), inputs=inputs[:examples_num],
+                                 labels=labels[:examples_num], outputs=output[:examples_num])
 
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects / dataset_sizes[phase]

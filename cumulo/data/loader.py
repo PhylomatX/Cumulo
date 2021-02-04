@@ -69,15 +69,13 @@ def get_most_frequent_label(labels):
 
 def read_nc(nc_file):
     """return masked arrays, with masks indicating the invalid values"""
-
     file = nc4.Dataset(nc_file, 'r', format='NETCDF4')
 
     f_radiances = np.vstack([file.variables[name][:] for name in radiances_nc])
-    f_properties = np.vstack([file.variables[name][:] for name in properties_nc])
     f_rois = file.variables[rois_nc][:]
     f_labels = file.variables[labels_nc][:]
 
-    return f_radiances, f_properties, f_rois, f_labels
+    return f_radiances, f_rois, f_labels
 
 
 def read_npz(npz_file):
@@ -109,8 +107,7 @@ def include_cloud_mask(labels, cloud_mask):
 class CumuloDataset(Dataset):
 
     def __init__(self, d_path, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
-                 file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, redundancy: int = 1):
-
+                 file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, center_distance=None):
         self.root_dir = d_path
         self.ext = ext
         self.file_size = file_size
@@ -128,15 +125,15 @@ class CumuloDataset(Dataset):
         self.pred = pred
         self.batch_size = batch_size
         self.tile_size = tile_size
-        self.redundancy = redundancy
+        self.center_distance = center_distance
 
     def __len__(self):
-        if self.ext == "npz":
+        if self.ext in ["npz", "nc"]:
             return len(self.file_paths)
 
     def __getitem__(self, idx):
         if self.ext == "nc":
-            radiances, properties, cloud_mask, labels = read_nc(self.file_paths[idx])
+            radiances, cloud_mask, labels = read_nc(self.file_paths[idx])
             if self.pred:
                 # Prediction mode
                 tiles, locations = self.tiler(radiances)
@@ -147,18 +144,18 @@ class CumuloDataset(Dataset):
                 return self.file_paths[idx], tiles, locations, cloud_mask, labels
             else:
                 # On-the-fly tile generation
-                tiles, _ = sample_random_tiles_from_track(radiances, properties, cloud_mask, labels,
-                                                          tile_size=self.tile_size)
+                tiles, _ = sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=self.tile_size,
+                                                          batch_size=self.batch_size,
+                                                          center_distance=self.center_distance)
                 radiances = np.zeros((self.batch_size, 13, self.tile_size, self.tile_size))
                 labels = np.zeros((self.batch_size, self.tile_size, self.tile_size))
                 for tile in range(self.batch_size):
-                    labels = tiles[3].data[tile].squeeze()
-                    cloud_mask = tiles[2].data[tile].squeeze()
-                    low_labels = include_cloud_mask(labels[..., 0], cloud_mask)
+                    clabels = tiles[2].data[tile].squeeze()
+                    cloud_mask = tiles[1].data[tile].squeeze()
+                    low_labels = include_cloud_mask(clabels[..., 0], cloud_mask)
                     radiances[tile] = tiles[0].data[tile]
                     labels[tile] = low_labels
                 return torch.from_numpy(radiances), torch.from_numpy(labels)
-
         elif self.ext == "npz":
             radiances, labels = read_npz(self.file_paths[idx])
             if self.normalizer is not None:
