@@ -38,7 +38,6 @@ def main(_):
     # Initialize parameters and prepare data
     nb_epochs = FLAGS.nb_epochs
     nb_classes = 9
-    batch_size = FLAGS.bs
     lr = 0.001
     weight_decay = 0.0
 
@@ -93,13 +92,10 @@ def main(_):
         print("Training with validation!")
         val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
                                     tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
-        dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers),
-                       'val': torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=FLAGS.num_workers)}
-        dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
+        datasets = {'train': train_dataset, 'val': val_dataset}
     else:
         print("Training without validation!")
-        dataloaders = {'train': torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=FLAGS.num_workers)}
-        dataset_sizes = {'train': len(train_dataset)}
+        datasets= {'train': train_dataset}
 
     # Prepare model
     if FLAGS.model == 'weak':
@@ -115,10 +111,10 @@ def main(_):
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     # Start training
-    train(model, FLAGS.m_path, dataloaders, dataset_sizes, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
+    train(model, FLAGS.m_path, datasets, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
 
 
-def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
+def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
     """
     Trains a model for all epochs using the provided dataloader.
     """
@@ -129,9 +125,20 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
 
     metrics = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
 
+    dataloaders = {}
+    for phase in datasets:
+        dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=False, batch_size=FLAGS.bs,
+                                                         num_workers=FLAGS.num_workers)
+
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
         print('-' * 10)
+
+        torch.manual_seed(epoch)
+        torch.cuda.manual_seed(epoch)
+        np.random.seed(epoch)
+        random.seed(epoch)
+        torch.backends.cudnn.deterministic = True
 
         # Each epoch has a training and validation phase
         for phase in dataloaders:
@@ -195,8 +202,8 @@ def train(model, m_path, dataloaders, dataset_sizes, criterion, optimizer, sched
                         np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'), inputs=inputs[:examples_num],
                                  labels=labels[:examples_num], outputs=output[:examples_num])
 
-            epoch_loss = running_loss / dataset_sizes[phase]
-            epoch_acc = running_corrects / dataset_sizes[phase]
+            epoch_loss = running_loss / len(datasets[phase])
+            epoch_acc = running_corrects / len(datasets[phase])
 
             if best_loss is None:
                 best_loss = epoch_loss

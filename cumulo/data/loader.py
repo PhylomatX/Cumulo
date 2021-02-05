@@ -106,7 +106,7 @@ def include_cloud_mask(labels, cloud_mask):
 
 class CumuloDataset(Dataset):
 
-    def __init__(self, d_path, ext="npz", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
+    def __init__(self, d_path, ext="nc", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
                  file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, center_distance=None):
         self.root_dir = d_path
         self.ext = ext
@@ -155,6 +155,8 @@ class CumuloDataset(Dataset):
                     low_labels = include_cloud_mask(clabels[..., 0], cloud_mask)
                     radiances[tile] = tiles[0].data[tile]
                     labels[tile] = low_labels
+                if self.normalizer is not None:
+                    radiances = self.normalizer(radiances)
                 return torch.from_numpy(radiances), torch.from_numpy(labels)
         elif self.ext == "npz":
             radiances, labels = read_npz(self.file_paths[idx])

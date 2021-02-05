@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 flags.DEFINE_string('path', None, help='Directory where npz files are located.')
 flags.DEFINE_string('type', 'train', help='Type of example (val or train)')
-flags.DEFINE_list('sample_interval', [5, 6], help='Interval of files to show from each example.')
+flags.DEFINE_list('sample_interval', [0, 6], help='Interval of files to show from each example.')
 flags.DEFINE_list('epoch_interval', [0, 100], help='Interval of files to show from each example.')
 FLAGS = flags.FLAGS
 
