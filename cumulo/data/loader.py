@@ -3,6 +3,8 @@ import numpy as np
 import os
 import netCDF4 as nc4
 import torch
+import random
+from scipy.ndimage import rotate
 from torch.utils.data import Dataset
 from cumulo.data.nc_tile_extractor import sample_random_tiles_from_track
 
@@ -107,7 +109,8 @@ def include_cloud_mask(labels, cloud_mask):
 class CumuloDataset(Dataset):
 
     def __init__(self, d_path, ext="nc", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
-                 file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, center_distance=None):
+                 file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, center_distance=None,
+                 augment_prob: float = 0):
         self.root_dir = d_path
         self.ext = ext
         self.file_size = file_size
@@ -126,6 +129,7 @@ class CumuloDataset(Dataset):
         self.batch_size = batch_size
         self.tile_size = tile_size
         self.center_distance = center_distance
+        self.augment_prob = augment_prob
 
     def __len__(self):
         if self.ext in ["npz", "nc"]:
@@ -157,6 +161,11 @@ class CumuloDataset(Dataset):
                     labels[tile] = low_labels
                 if self.normalizer is not None:
                     radiances = self.normalizer(radiances)
+                if self.augment_prob > 0:
+                    for sample in range(len(radiances)):
+                        if random.random() < self.augment_prob:
+                            radiances[sample] = np.rot90(radiances[sample], axes=(1, 2))
+                            labels[sample] = np.rot90(labels[sample])
                 return torch.from_numpy(radiances), torch.from_numpy(labels)
         elif self.ext == "npz":
             radiances, labels = read_npz(self.file_paths[idx])
@@ -164,7 +173,7 @@ class CumuloDataset(Dataset):
                 radiances = self.normalizer(radiances)
             if self.label_preproc is not None:
                 labels = self.label_preproc(labels)
-            return torch.from_numpy(radiances), torch.from_numpy(labels)
+        return torch.from_numpy(radiances), torch.from_numpy(labels)
 
     def __str__(self):
         return 'CUMULO'

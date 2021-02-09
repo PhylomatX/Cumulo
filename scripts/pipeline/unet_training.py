@@ -31,6 +31,7 @@ flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
 flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
 flags.DEFINE_bool('examples', False, help='Save some training examples in each epoch')
 flags.DEFINE_integer('examples_num', None, help='How many samples should get saved as example?')
+flags.DEFINE_float('augment_prob', 0, help='Augmentation probability')
 FLAGS = flags.FLAGS
 
 
@@ -62,8 +63,9 @@ def main(_):
         std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
     except FileNotFoundError:
         print("Computing dataset mean, standard deviation and class ratios")
-        dataset = CumuloDataset(FLAGS.d_path)
-        weights, class_weights, m, std = get_dataset_statistics(dataset, nb_classes, tile_size=128)
+        dataset = CumuloDataset(FLAGS.d_path, batch_size=FLAGS.dataset_bs, tile_size=FLAGS.tile_size,
+                                center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
+        weights, class_weights, m, std = get_dataset_statistics(dataset, nb_classes, tile_size=FLAGS.tile_size)
         np.save(os.path.join(FLAGS.d_path, "class-weights.npy"), class_weights)
         np.save(os.path.join(FLAGS.d_path, "mean.npy"), m)
         np.save(os.path.join(FLAGS.d_path, "std.npy"), std)
@@ -86,16 +88,18 @@ def main(_):
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
-                                  tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
+                                  tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
+                                  augment_prob=FLAGS.augment_prob)
 
     if FLAGS.val:
         print("Training with validation!")
         val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
-                                    tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
+                                    tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
+                                    augment_prob=FLAGS.augment_prob)
         datasets = {'train': train_dataset, 'val': val_dataset}
     else:
         print("Training without validation!")
-        datasets= {'train': train_dataset}
+        datasets = {'train': train_dataset}
 
     # Prepare model
     if FLAGS.model == 'weak':
@@ -127,7 +131,7 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
 
     dataloaders = {}
     for phase in datasets:
-        dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=False, batch_size=FLAGS.bs,
+        dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.bs,
                                                          num_workers=FLAGS.num_workers)
 
     for epoch in range(num_epochs):
