@@ -80,7 +80,7 @@ def main(_):
     # dataset loader
     tile_extr = TileExtractor()
     normalizer = Normalizer(m, s)
-    dataset = CumuloDataset(d_path=FLAGS.nc_path, ext="nc", normalizer=normalizer, tiler=tile_extr)
+    dataset = CumuloDataset(d_path=FLAGS.nc_path, ext="nc", normalizer=normalizer, tiler=tile_extr, pred=True)
 
     use_cuda = torch.cuda.is_available()
     print("using GPUs?", use_cuda)
@@ -92,7 +92,7 @@ def main(_):
     for swath in dataset:
         filename, tiles, locations, cloud_mask, labels = swath
         labels = include_cloud_mask(labels.data, cloud_mask.data)
-        merged = np.zeros_like(cloud_mask.squeeze())
+        merged = np.ones(cloud_mask.squeeze().shape) * -1
         predictions = predict_tiles(model, tiles, use_cuda)
         for ix, loc in enumerate(locations):
             merged[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]

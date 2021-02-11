@@ -11,6 +11,8 @@ FLAGS = flags.FLAGS
 def main(_):
     files = os.listdir(FLAGS.p_path)
     for file in files:
+        if 'npz' not in file:
+            continue
         data = np.load(os.path.join(FLAGS.p_path, file))
         fig, axs = plt.subplots(1, 2, figsize=(15, 5))
         axs[0].set_title('Prediction')
