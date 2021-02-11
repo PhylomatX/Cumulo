@@ -83,9 +83,10 @@ def main(_):
         train_idx = np.load(os.path.join(FLAGS.m_path, 'train_idx.npy'))
         val_idx = np.load(os.path.join(FLAGS.m_path, 'val_idx.npy'))
     except FileNotFoundError:
-        train_idx, val_idx = np.split(idx, [int(.95 * tile_num)])
+        train_idx, val_idx, test_idx = np.split(idx, [int(.7 * tile_num), int(.8 * tile_num)])
         np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
+        np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), test_idx)
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
                                   tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
