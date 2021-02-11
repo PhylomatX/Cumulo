@@ -49,11 +49,11 @@ class UpconvConcat(nn.Module):
             out_channels (int): output channel
         """
         super(UpconvConcat, self).__init__()
-        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear')
-        self.conv2 = ConvConv(in_channels + out_channels, out_channels, bn_momentum)
+        self.upconv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+        self.conv = ConvConv(in_channels, out_channels, bn_momentum)
 
     def forward(self, X1, X2):
-        X1 = self.upsample(X1)
+        X1 = self.upconv(X1)
         X1_dim = X1.size()[2]
         X2 = extract_img(X1_dim, X2)
         X1 = torch.cat((X1, X2), dim=1)
