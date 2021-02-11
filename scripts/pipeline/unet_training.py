@@ -31,6 +31,8 @@ flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
 flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
 flags.DEFINE_bool('examples', False, help='Save some training examples in each epoch')
 flags.DEFINE_integer('examples_num', None, help='How many samples should get saved as example?')
+flags.DEFINE_integer('epoch_size', None, help='How large should one epoch be (independent from the actual dataset)?')
+flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequency')
 flags.DEFINE_float('augment_prob', 0, help='Augmentation probability')
 FLAGS = flags.FLAGS
 
@@ -83,14 +85,14 @@ def main(_):
         train_idx = np.load(os.path.join(FLAGS.m_path, 'train_idx.npy'))
         val_idx = np.load(os.path.join(FLAGS.m_path, 'val_idx.npy'))
     except FileNotFoundError:
-        train_idx, val_idx, test_idx = np.split(idx, [int(.7 * tile_num), int(.8 * tile_num)])
+        train_idx, val_idx, test_idx = np.split(idx, [int(.85 * tile_num), int(.9 * tile_num)])
         np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
         np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), test_idx)
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
                                   tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
-                                  augment_prob=FLAGS.augment_prob)
+                                  augment_prob=FLAGS.augment_prob, epoch_size=FLAGS.epoch_size)
 
     if FLAGS.val:
         print("Training with validation!")
@@ -128,12 +130,17 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
     best_acc = 0.0
     best_loss = None
 
+    with open(os.path.join(FLAGS.m_path, 'flagfile.txt'), 'w') as f:
+        f.writelines(FLAGS.flags_into_string())
+
     metrics = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
 
     dataloaders = {}
     for phase in datasets:
         dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.bs,
                                                          num_workers=FLAGS.num_workers)
+
+    file_dict = {}
 
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
@@ -150,6 +157,8 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
             if phase == 'train':
                 model.train()  # Set model to training mode
             else:
+                if epoch % FLAGS.analysis_freq != 0:
+                    continue
                 model.eval()  # Set model to evaluate mode
 
             running_loss = 0.0
@@ -158,7 +167,13 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
 
             # Iterate over data.
             for sample_ix, sample in enumerate(tqdm(dataloaders[phase])):
-                inputs, labels = sample
+                inputs, labels, file_ix = sample
+
+                if phase == 'train':
+                    try:
+                        file_dict[file_ix] += 1
+                    except KeyError:
+                        file_dict[file_ix] = 1
 
                 if FLAGS.merged:
                     inputs = inputs.reshape(-1, *tuple(inputs.shape[2:]))
@@ -198,7 +213,7 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                 i += 1
 
                 # save training examples
-                if FLAGS.examples:
+                if FLAGS.examples and epoch % FLAGS.analysis_freq == 0:
                     if sample_ix == 0:
                         inputs = inputs.cpu().detach().numpy()
                         examples_num = FLAGS.examples_num
@@ -228,8 +243,14 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                 best_loss = epoch_loss
                 torch.save({'model_state_dict': model.state_dict()}, os.path.join(m_path, f'train_best.pth'))
 
+        for phase in datasets:
+            datasets[phase].next_epoch()
+
         with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
             pkl.dump(metrics, f)
+
+        with open(os.path.join(FLAGS.m_path, 'file_dict.pkl'), 'wb') as f:
+            pkl.dump(file_dict, f)
 
     time_elapsed = time.time() - t0
     print('Training complete in {:.0f}m {:.0f}s'.format(

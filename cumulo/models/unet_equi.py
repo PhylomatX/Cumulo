@@ -6,10 +6,10 @@ from e2cnn import gspaces
 def ConvConv(in_type, out_type, bn_momentum=0.1):
     conv_conv = enn.SequentialModule(
         enn.R2Conv(in_type, out_type, kernel_size=3, padding=1, stride=1),
-        enn.InnerBatchNorm(out_type, momentum=bn_momentum),
+        enn.InnerBatchNorm(out_type, momentum=bn_momentum, track_running_stats=False),
         enn.ReLU(out_type, inplace=True),
         enn.R2Conv(out_type, out_type, kernel_size=3, padding=1, stride=1),
-        enn.InnerBatchNorm(out_type, momentum=bn_momentum),
+        enn.InnerBatchNorm(out_type, momentum=bn_momentum, track_running_stats=False),
         enn.ReLU(out_type, inplace=True)
     )
     return conv_conv

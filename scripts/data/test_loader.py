@@ -2,7 +2,6 @@ from absl import app
 from absl import flags
 import time
 from cumulo.data.loader import CumuloDataset
-import matplotlib.pyplot as plt
 import random
 import torch
 import numpy as np
@@ -13,9 +12,10 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    dataset = CumuloDataset(FLAGS.path, ext="nc", batch_size=64, tile_size=128, center_distance=0)
+    dataset = CumuloDataset(FLAGS.path, ext="nc", batch_size=64, tile_size=128, center_distance=0, epoch_size=20, indices=np.arange(53))
+    dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, batch_size=1, num_workers=8)
     total_time = 0
-    r_seed = 1
+    r_seed = 6
 
     torch.manual_seed(r_seed)
     torch.cuda.manual_seed(r_seed)
@@ -23,17 +23,18 @@ def main(_):
     random.seed(r_seed)
     torch.backends.cudnn.deterministic = True
 
-    for epoch in range(3):
-        for sample in range(len(dataset)):
-            start = time.time()
-            rads, labs = dataset[sample]
-            total_time += time.time() - start
-            fig, axs = plt.subplots(1, 2, figsize=(15, 8))
-            axs[0].imshow(rads[0][0])
-            axs[1].imshow(labs[0])
-            plt.title(f'Iteration {epoch}')
-            plt.show()
-            plt.close()
+    # idcs = [1012, 1011, 1010, 1009]
+
+    for epoch in range(5):
+        for ix, res in enumerate(dataloader):
+            print(f'{ix} - {res}')
+            # fig, axs = plt.subplots(1, 2, figsize=(15, 8))
+            # axs[0].imshow(rads[0][0])
+            # axs[1].imshow(labs[0])
+            # plt.title(f'Iteration {epoch}')
+            # plt.show()
+            # plt.close()
+        dataset.next_epoch()
 
     print(total_time / len(dataset))
 
