@@ -33,8 +33,8 @@ flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged datas
 flags.DEFINE_bool('examples', False, help='Save some training examples in each epoch')
 flags.DEFINE_bool('local_norm', True, help='Standardize each image channel-wise. If False the statistics of a data subset will be used.')
 flags.DEFINE_integer('examples_num', None, help='How many samples should get saved as example?')
-flags.DEFINE_integer('epoch_size', None, help='How large should one epoch be (independent from the actual dataset)?')
 flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequency')
+flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
 flags.DEFINE_float('augment_prob', 0, help='Augmentation probability')
 FLAGS = flags.FLAGS
 
@@ -51,7 +51,6 @@ def main(_):
     np.random.seed(FLAGS.r_seed)
     random.seed(FLAGS.r_seed)
     torch.backends.cudnn.deterministic = True
-    # torch.multiprocessing.set_sharing_strategy('file_system')
     faulthandler.enable()
 
     if not os.path.exists(FLAGS.m_path):
@@ -102,7 +101,7 @@ def main(_):
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
                                   tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
-                                  augment_prob=FLAGS.augment_prob, epoch_size=FLAGS.epoch_size)
+                                  augment_prob=FLAGS.augment_prob)
 
     if FLAGS.val:
         print("Training with validation!")
@@ -118,7 +117,7 @@ def main(_):
     if FLAGS.model == 'weak':
         model = UNet_weak(in_channels=13, out_channels=nb_classes, starting_filters=32)
     elif FLAGS.model == 'equi':
-        model = UNet_equi(in_channels=13, out_channels=nb_classes, starting_filters=32)
+        model = UNet_equi(in_channels=13, out_channels=nb_classes, starting_filters=32, rot=FLAGS.rot)
     print('Model initialized!')
     model = model.to(device)
 
@@ -133,8 +132,8 @@ def main(_):
 
     lr_sched = torch.optim.lr_scheduler.CyclicLR(
         optimizer,
-        base_lr=1.2e-5,
-        max_lr=2e-4,
+        base_lr=1.2e-5,  # 10^-6 for weak
+        max_lr=2e-4,  # 10^-4 for weak
         cycle_momentum=True if 'momentum' in optimizer.defaults else False
     )
 
@@ -158,8 +157,6 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
 
     training_info = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
                      'train_running_accuracy': [], 'running_lr': []}
-
-    file_dict = {}
 
     for epoch in range(num_epochs):
         dataloaders = {}
@@ -190,13 +187,7 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
 
             # Iterate over data.
             for sample_ix, sample in enumerate(tqdm(dataloaders[phase])):
-                inputs, labels, file_ix = sample
-
-                if phase == 'train':
-                    try:
-                        file_dict[file_ix] += 1
-                    except KeyError:
-                        file_dict[file_ix] = 1
+                inputs, labels = sample
 
                 if FLAGS.merged:
                     inputs = inputs.reshape(-1, *tuple(inputs.shape[2:]))
@@ -236,9 +227,7 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                 accuracy = float(np.sum(output[mask] == labels[mask]) / output[mask].shape)
                 running_accuracy += accuracy
 
-                if phase == 'train':
-                    print(accuracy)
-                    print(scheduler.get_lr())
+                if phase == 'train' and epoch < 2:
                     training_info[phase + '_running_accuracy'].append(accuracy)
                     training_info['running_lr'].append(scheduler.get_lr())
                 with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
@@ -264,7 +253,6 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
             training_info[phase + '_acc'].append(float(epoch_acc))
 
             print('{} loss: {:.4f}, single pixel accuracy: {:.4f}'.format(phase, epoch_loss, epoch_acc))
-            print(scheduler.get_lr())
 
             # save models
             if phase == 'val' and best_acc < epoch_acc:
@@ -284,9 +272,6 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
 
         with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
             pkl.dump(training_info, f)
-
-        with open(os.path.join(FLAGS.m_path, 'file_dict.pkl'), 'wb') as f:
-            pkl.dump(file_dict, f)
 
     time_elapsed = time.time() - t0
     print('Training complete in {:.0f}m {:.0f}s'.format(

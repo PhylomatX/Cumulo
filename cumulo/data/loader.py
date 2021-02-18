@@ -108,7 +108,7 @@ class CumuloDataset(Dataset):
 
     def __init__(self, d_path, ext="nc", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
                  file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, center_distance=None,
-                 augment_prob: float = 0, epoch_size: int = None):
+                 augment_prob: float = 0):
         self.root_dir = d_path
         self.ext = ext
         self.file_size = file_size
@@ -128,15 +128,12 @@ class CumuloDataset(Dataset):
         self.tile_size = tile_size
         self.center_distance = center_distance
         self.augment_prob = augment_prob
-        self.epoch_size = epoch_size or len(self.file_paths)
-        self.curr_partition = 0
 
     def __len__(self):
         if self.ext in ["npz", "nc"]:
-            return self.epoch_size
+            return len(self.file_paths)
 
     def __getitem__(self, idx):
-        idx = (idx + self.curr_partition) % len(self.file_paths)
         if self.ext == "nc":
             radiances, cloud_mask, labels = read_nc(self.file_paths[idx])
             if self.pred:
@@ -167,17 +164,14 @@ class CumuloDataset(Dataset):
                         if random.random() < self.augment_prob:
                             radiances[sample] = np.rot90(radiances[sample], axes=(1, 2))
                             labels[sample] = np.rot90(labels[sample])
-                return torch.from_numpy(radiances), torch.from_numpy(labels), idx
+                return torch.from_numpy(radiances), torch.from_numpy(labels)
         elif self.ext == "npz":
             radiances, labels = read_npz(self.file_paths[idx])
             if self.normalizer is not None:
                 radiances = self.normalizer(radiances)
             if self.label_preproc is not None:
                 labels = self.label_preproc(labels)
-        return torch.from_numpy(radiances), torch.from_numpy(labels), idx
-
-    def next_epoch(self):
-        self.curr_partition = (self.curr_partition + self.epoch_size) % len(self.file_paths)
+        return torch.from_numpy(radiances), torch.from_numpy(labels)
 
     def __str__(self):
         return 'CUMULO'
