@@ -10,6 +10,7 @@ from absl import app
 import torch.nn as nn
 from absl import flags
 import torch.optim as optim
+import faulthandler
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
@@ -41,14 +42,16 @@ def main(_):
     # Initialize parameters and prepare data
     nb_epochs = FLAGS.nb_epochs
     nb_classes = 9
-    lr = 0.001
-    weight_decay = 0.0
+    lr = 1e-3
+    weight_decay = 0.5e-4
 
     torch.manual_seed(FLAGS.r_seed)
     torch.cuda.manual_seed(FLAGS.r_seed)
     np.random.seed(FLAGS.r_seed)
     random.seed(FLAGS.r_seed)
     torch.backends.cudnn.deterministic = True
+    # torch.multiprocessing.set_sharing_strategy('file_system')
+    faulthandler.enable()
 
     if not os.path.exists(FLAGS.m_path):
         os.makedirs(FLAGS.m_path)
@@ -113,12 +116,25 @@ def main(_):
     model = model.to(device)
 
     # Prepare training environment
-    optimizer = optim.Adam(model.parameters(), lr=lr, betas=(0.5, 0.999), weight_decay=weight_decay)
-    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100000, gamma=0.9)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    # lr_sched = optim.lr_scheduler.StepLR(optimizer, step_size=100000, gamma=0.9)
+
+    # Begin with a very small lr and double it every 100 steps.
+    for grp in optimizer.param_groups:
+        grp['lr'] = 1e-7
+    lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
+
+    # lr_sched = torch.optim.lr_scheduler.CyclicLR(
+    #     optimizer,
+    #     base_lr=1e-6,
+    #     max_lr=1e-3,
+    #     cycle_momentum=True if 'momentum' in optimizer.defaults else False
+    # )
+
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     # Start training
-    train(model, FLAGS.m_path, datasets, criterion, optimizer, exp_lr_scheduler, num_epochs=nb_epochs, device=device)
+    train(model, FLAGS.m_path, datasets, criterion, optimizer, lr_sched, num_epochs=nb_epochs, device=device)
 
 
 def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
@@ -133,16 +149,17 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
     with open(os.path.join(FLAGS.m_path, 'flagfile.txt'), 'w') as f:
         f.writelines(FLAGS.flags_into_string())
 
-    metrics = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
-
-    dataloaders = {}
-    for phase in datasets:
-        dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.bs,
-                                                         num_workers=FLAGS.num_workers)
+    training_info = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
+                     'train_running_accuracy': [], 'running_lr': []}
 
     file_dict = {}
 
     for epoch in range(num_epochs):
+        dataloaders = {}
+        for phase in datasets:
+            dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.bs,
+                                                             num_workers=FLAGS.num_workers)
+
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
         print('-' * 10)
 
@@ -162,8 +179,7 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                 model.eval()  # Set model to evaluate mode
 
             running_loss = 0.0
-            running_corrects = 0
-            i = 0
+            running_accuracy = 0
 
             # Iterate over data.
             for sample_ix, sample in enumerate(tqdm(dataloaders[phase])):
@@ -196,6 +212,7 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                         bmask = bmask.unsqueeze(0).expand_as(outputs[ix])
                         bouts = outputs[ix][bmask].reshape(outputs.shape[1], -1).transpose(0, 1)
                         loss += criterion(bouts, blabels.long())
+                    loss /= mask.shape[0]
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
@@ -208,9 +225,17 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                 mask = mask.cpu().detach().numpy()
 
                 # statistics
-                running_loss += loss.item() * inputs.size(0)
-                running_corrects += np.sum(output[mask] == labels[mask])
-                i += 1
+                running_loss += loss.item()
+                accuracy = float(np.sum(output[mask] == labels[mask]) / output[mask].shape)
+                running_accuracy += accuracy
+
+                if phase == 'train':
+                    print(accuracy)
+                    print(scheduler.get_lr())
+                    training_info[phase + '_running_accuracy'].append(accuracy)
+                    training_info['running_lr'].append(scheduler.get_lr())
+                with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
+                    pkl.dump(training_info, f)
 
                 # save training examples
                 if FLAGS.examples and epoch % FLAGS.analysis_freq == 0:
@@ -222,20 +247,25 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                         np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'), inputs=inputs[:examples_num],
                                  labels=labels[:examples_num], outputs=output[:examples_num])
 
+                del outputs
+                del labels
+                del mask
+                del inputs
+
             epoch_loss = running_loss / len(datasets[phase])
-            epoch_acc = running_corrects / len(datasets[phase])
+            epoch_acc = running_accuracy / len(datasets[phase])
 
             if best_loss is None:
                 best_loss = epoch_loss
 
-            metrics[phase + '_loss'].append(epoch_loss)
-            metrics[phase + '_acc'].append(float(epoch_acc))
+            training_info[phase + '_loss'].append(epoch_loss)
+            training_info[phase + '_acc'].append(float(epoch_acc))
 
-            print('{} loss: {:.4f}, single pixel accuracy: {:.4f}'.format(
-                phase, epoch_loss, epoch_acc))
+            print('{} loss: {:.4f}, single pixel accuracy: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+            print(scheduler.get_lr())
 
             # save models
-            if phase == 'val' and epoch_acc > best_acc:
+            if phase == 'val' and epoch_loss < best_acc:
                 best_acc = epoch_acc
                 torch.save({'model_state_dict': model.state_dict()}, os.path.join(m_path, f'val_best.pth'))
 
@@ -247,10 +277,12 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
             datasets[phase].next_epoch()
 
         with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
-            pkl.dump(metrics, f)
+            pkl.dump(training_info, f)
 
         with open(os.path.join(FLAGS.m_path, 'file_dict.pkl'), 'wb') as f:
             pkl.dump(file_dict, f)
+
+        del dataloaders
 
     time_elapsed = time.time() - t0
     print('Training complete in {:.0f}m {:.0f}s'.format(

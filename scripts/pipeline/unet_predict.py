@@ -12,9 +12,10 @@ from absl import flags
 flags.DEFINE_string('m_path', None, help='Location of model')
 flags.DEFINE_string('nc_path', None, help='Location of nc files')
 flags.DEFINE_string('stat_path', None, help='Location of dataset statistics')
-flags.DEFINE_string('m_name', 'train_best.pth', help='Model name')
+flags.DEFINE_string('m_name', 'val_best.pth', help='Model name')
 flags.DEFINE_string('m_type', 'weak', help='Model type')
 flags.DEFINE_integer('nb_classes', 9, help='Number of classes')
+flags.DEFINE_integer('bs', 64, help='Batch size for prediction')
 flags.DEFINE_string('o_path', None, help='Location for output')
 FLAGS = flags.FLAGS
 
@@ -25,10 +26,14 @@ def load_model(model_dir, use_cuda):
         model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32)
     elif FLAGS.m_type == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32)
-    print('Model initialized!')
-    model_path = os.path.join(model_dir, FLAGS.m_name)
     if model is None:
         raise ValueError('Model type not known.')
+    print('Model initialized!')
+
+    import ipdb
+    ipdb.set_trace()
+
+    model_path = os.path.join(model_dir, FLAGS.m_name)
     state_dict = torch.load(model_path)['model_state_dict']
     model.load_state_dict(state_dict)
     if use_cuda:
@@ -74,13 +79,21 @@ def include_cloud_mask(labels, cloud_mask):
 
 
 def main(_):
-    m = np.load(os.path.join(FLAGS.stat_path, "mean.npy"))
-    s = np.load(os.path.join(FLAGS.stat_path, "std.npy"))
+    stat_path = FLAGS.stat_path
+    if stat_path is None:
+        stat_path = FLAGS.nc_path
+    m = np.load(os.path.join(stat_path, "mean.npy"))
+    s = np.load(os.path.join(stat_path, "std.npy"))
 
     # dataset loader
     tile_extr = TileExtractor()
     normalizer = Normalizer(m, s)
-    dataset = CumuloDataset(d_path=FLAGS.nc_path, ext="nc", normalizer=normalizer, tiler=tile_extr, pred=True)
+    try:
+        test_idx = np.load(os.path.join(FLAGS.m_path, 'test_idx.npy'))
+        print(f"Found test set with {len(test_idx)} files.")
+    except FileNotFoundError:
+        test_idx = None
+    dataset = CumuloDataset(d_path=FLAGS.nc_path, ext="nc", normalizer=normalizer, tiler=tile_extr, pred=True, indices=test_idx)
 
     use_cuda = torch.cuda.is_available()
     print("using GPUs?", use_cuda)
@@ -93,7 +106,7 @@ def main(_):
         filename, tiles, locations, cloud_mask, labels = swath
         labels = include_cloud_mask(labels.data, cloud_mask.data)
         merged = np.ones(cloud_mask.squeeze().shape) * -1
-        predictions = predict_tiles(model, tiles, use_cuda)
+        predictions = predict_tiles(model, tiles, use_cuda, batch_size=FLAGS.bs)
         for ix, loc in enumerate(locations):
             merged[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
         np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.nc_path, '').replace('.nc', '')),

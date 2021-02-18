@@ -72,11 +72,10 @@ def get_most_frequent_label(labels):
 def read_nc(nc_file):
     """return masked arrays, with masks indicating the invalid values"""
     file = nc4.Dataset(nc_file, 'r', format='NETCDF4')
-
     f_radiances = np.vstack([file.variables[name][:] for name in radiances_nc])
     f_rois = file.variables[rois_nc][:]
     f_labels = file.variables[labels_nc][:]
-
+    file.close()
     return f_radiances, f_rois, f_labels
 
 

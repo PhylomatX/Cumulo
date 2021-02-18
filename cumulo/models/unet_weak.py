@@ -16,11 +16,11 @@ class ConvConv(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, stride=1),
             # nn.GroupNorm(int(0.5 * out_channels), out_channels),
-            nn.BatchNorm2d(out_channels, momentum=bn_momentum),
+            nn.BatchNorm2d(out_channels, momentum=bn_momentum, track_running_stats=False),
             nn.ReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, 3, padding=1, stride=1),
             # nn.GroupNorm(int(0.5 * out_channels), out_channels),
-            nn.BatchNorm2d(out_channels, momentum=bn_momentum),
+            nn.BatchNorm2d(out_channels, momentum=bn_momentum, track_running_stats=False),
             nn.ReLU(inplace=True)
         )
 
@@ -51,15 +51,17 @@ class UpconvConcat(nn.Module):
             out_channels (int): output channel
         """
         super(UpconvConcat, self).__init__()
-        self.upconv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
-        self.conv = ConvConv(in_channels, out_channels, bn_momentum)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, stride=1)
+        self.upconv = nn.Upsample(scale_factor=2)
+        self.conv2 = ConvConv(in_channels, out_channels, bn_momentum)
 
     def forward(self, X1, X2):
+        X1 = self.conv1(X1)
         X1 = self.upconv(X1)
         X1_dim = X1.size()[2]
         X2 = extract_img(X1_dim, X2)
         X1 = torch.cat((X1, X2), dim=1)
-        X1 = self.conv(X1)
+        X1 = self.conv2(X1)
         return X1
 
 
