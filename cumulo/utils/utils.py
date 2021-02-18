@@ -82,7 +82,7 @@ def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
     return weights, weights_div, m, std
 
 
-class Normalizer(object):
+class GlobalNormalizer(object):
 
     def __init__(self, mean, std):
         self.mean = mean
@@ -90,6 +90,16 @@ class Normalizer(object):
 
     def __call__(self, image):
         return (image - self.mean) / self.std
+
+
+class LocalNormalizer(object):
+
+    def __call__(self, image):
+        for b in range(image.shape[0]):
+            means = np.mean(image[b], axis=(1, 2)).reshape((image[b].shape[0], 1, 1))
+            stds = np.std(image[b], axis=(1, 2)).reshape((image[b].shape[0], 1, 1))
+            image[b] = (image[b] - means) / stds
+        return image
 
 
 class TileExtractor:

@@ -3,7 +3,7 @@ import torch
 import math
 import os
 from cumulo.data.loader import CumuloDataset
-from cumulo.utils.utils import Normalizer, TileExtractor
+from cumulo.utils.utils import GlobalNormalizer, TileExtractor
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
 from absl import app
@@ -87,7 +87,7 @@ def main(_):
 
     # dataset loader
     tile_extr = TileExtractor()
-    normalizer = Normalizer(m, s)
+    normalizer = GlobalNormalizer(m, s)
     try:
         test_idx = np.load(os.path.join(FLAGS.m_path, 'test_idx.npy'))
         print(f"Found test set with {len(test_idx)} files.")

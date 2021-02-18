@@ -14,7 +14,7 @@ import faulthandler
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
-from cumulo.utils.utils import Normalizer, get_dataset_statistics
+from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer, get_dataset_statistics
 
 flags.DEFINE_string('d_path', None, help='Data path')
 flags.DEFINE_string('m_path', None, help='Model path')
@@ -31,6 +31,7 @@ flags.DEFINE_bool('val', False, help='Flag for validation after each epoch.')
 flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
 flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
 flags.DEFINE_bool('examples', False, help='Save some training examples in each epoch')
+flags.DEFINE_bool('local_norm', True, help='Standardize each image channel-wise. If False the statistics of a data subset will be used.')
 flags.DEFINE_integer('examples_num', None, help='How many samples should get saved as example?')
 flags.DEFINE_integer('epoch_size', None, help='How large should one epoch be (independent from the actual dataset)?')
 flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequency')
@@ -75,7 +76,12 @@ def main(_):
         np.save(os.path.join(FLAGS.d_path, "mean.npy"), m)
         np.save(os.path.join(FLAGS.d_path, "std.npy"), std)
 
-    normalizer = Normalizer(m, std)
+    if FLAGS.local_norm:
+        print("Using local normalization.")
+        normalizer = LocalNormalizer()
+    else:
+        print("Using global normalization.")
+        normalizer = GlobalNormalizer(m, std)
     class_weights = torch.from_numpy(class_weights).float()
 
     if FLAGS.tile_num is None:
@@ -84,6 +90,7 @@ def main(_):
         tile_num = FLAGS.tile_num
     idx = np.arange(tile_num)
     np.random.shuffle(idx)
+
     try:
         train_idx = np.load(os.path.join(FLAGS.m_path, 'train_idx.npy'))
         val_idx = np.load(os.path.join(FLAGS.m_path, 'val_idx.npy'))
@@ -120,16 +127,16 @@ def main(_):
     # lr_sched = optim.lr_scheduler.StepLR(optimizer, step_size=100000, gamma=0.9)
 
     # Begin with a very small lr and double it every 100 steps.
-    for grp in optimizer.param_groups:
-        grp['lr'] = 1e-7
-    lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
+    # for grp in optimizer.param_groups:
+    #     grp['lr'] = 1e-7
+    # lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
 
-    # lr_sched = torch.optim.lr_scheduler.CyclicLR(
-    #     optimizer,
-    #     base_lr=1e-6,
-    #     max_lr=1e-3,
-    #     cycle_momentum=True if 'momentum' in optimizer.defaults else False
-    # )
+    lr_sched = torch.optim.lr_scheduler.CyclicLR(
+        optimizer,
+        base_lr=1.2e-5,
+        max_lr=2e-4,
+        cycle_momentum=True if 'momentum' in optimizer.defaults else False
+    )
 
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
@@ -247,11 +254,6 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                         np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'), inputs=inputs[:examples_num],
                                  labels=labels[:examples_num], outputs=output[:examples_num])
 
-                del outputs
-                del labels
-                del mask
-                del inputs
-
             epoch_loss = running_loss / len(datasets[phase])
             epoch_acc = running_accuracy / len(datasets[phase])
 
@@ -265,13 +267,17 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
             print(scheduler.get_lr())
 
             # save models
-            if phase == 'val' and epoch_loss < best_acc:
+            if phase == 'val' and best_acc < epoch_acc:
                 best_acc = epoch_acc
-                torch.save({'model_state_dict': model.state_dict()}, os.path.join(m_path, f'val_best.pth'))
-
+                torch.save(model.state_dict(), os.path.join(m_path, f'val_best'))
+                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_backup'))
             if phase == 'train' and epoch_loss < best_loss:
                 best_loss = epoch_loss
-                torch.save({'model_state_dict': model.state_dict()}, os.path.join(m_path, f'train_best.pth'))
+                torch.save(model.state_dict(), os.path.join(m_path, f'train_best'))
+                torch.save(model.state_dict(), os.path.join(m_path, f'train_best_backup'))
+            else:
+                torch.save(model.state_dict(), os.path.join(m_path, f'last_model'))
+                torch.save(model.state_dict(), os.path.join(m_path, f'last_model_backup'))
 
         for phase in datasets:
             datasets[phase].next_epoch()
@@ -281,8 +287,6 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
 
         with open(os.path.join(FLAGS.m_path, 'file_dict.pkl'), 'wb') as f:
             pkl.dump(file_dict, f)
-
-        del dataloaders
 
     time_elapsed = time.time() - t0
     print('Training complete in {:.0f}m {:.0f}s'.format(

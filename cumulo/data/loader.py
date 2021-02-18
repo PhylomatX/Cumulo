@@ -4,7 +4,6 @@ import os
 import netCDF4 as nc4
 import torch
 import random
-from scipy.ndimage import rotate
 from torch.utils.data import Dataset
 from cumulo.data.nc_tile_extractor import sample_random_tiles_from_track
 
