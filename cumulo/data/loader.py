@@ -151,12 +151,18 @@ class CumuloDataset(Dataset):
                                                           center_distance=self.center_distance)
                 radiances = np.zeros((self.batch_size, 13, self.tile_size, self.tile_size))
                 labels = np.zeros((self.batch_size, self.tile_size, self.tile_size))
+                cloud_mask = np.zeros((self.batch_size, self.tile_size, self.tile_size))
                 for tile in range(self.batch_size):
-                    clabels = tiles[2].data[tile].squeeze()
-                    cloud_mask = tiles[1].data[tile].squeeze()
-                    low_labels = include_cloud_mask(clabels[..., 0], cloud_mask)
+                    clabels = tiles[2].data[tile].squeeze()[..., 0]  # take lowest clouds as GT
+                    cloud_mask[tile] = tiles[1].data[tile].squeeze()
+                    # remove labels in non-cloud regions (cloud classes are from 0 to 7, pixels without label are -1)
+                    # => add 1, multiply with cloud mask to set labels in non-cloud regions to 0 and substract 1 to get
+                    # rid of cloud mask again
+                    clabels[clabels >= 0] += 1
+                    clabels *= cloud_mask[tile].astype(np.int8)
+                    clabels[clabels != -1] -= 1
+                    labels[tile] = clabels
                     radiances[tile] = tiles[0].data[tile]
-                    labels[tile] = low_labels
                 if self.normalizer is not None:
                     radiances = self.normalizer(radiances)
                 if self.augment_prob > 0:
@@ -164,7 +170,8 @@ class CumuloDataset(Dataset):
                         if random.random() < self.augment_prob:
                             radiances[sample] = np.rot90(radiances[sample], axes=(1, 2))
                             labels[sample] = np.rot90(labels[sample])
-                return torch.from_numpy(radiances), torch.from_numpy(labels)
+                            cloud_mask[sample] = np.rot90(cloud_mask[sample])
+                return torch.from_numpy(radiances), torch.from_numpy(labels), torch.from_numpy(cloud_mask)
         elif self.ext == "npz":
             radiances, labels = read_npz(self.file_paths[idx])
             if self.normalizer is not None:

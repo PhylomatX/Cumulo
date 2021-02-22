@@ -87,7 +87,7 @@ class UNet_weak(nn.Module):
         self.upconv1 = UpconvConcat(starting_filters * 8, starting_filters * 4, bn_momentum)
         self.upconv2 = UpconvConcat(starting_filters * 4, starting_filters * 2, bn_momentum)
         self.upconv3 = UpconvConcat(starting_filters * 2, starting_filters, bn_momentum)
-        self.conv_out = nn.Conv2d(starting_filters, out_channels, 1, padding=0, stride=1)
+        self.conv_out = nn.Conv2d(starting_filters, out_channels, 1, stride=1)
 
     def forward(self, X):
         X, conv1 = self.conv1(X)

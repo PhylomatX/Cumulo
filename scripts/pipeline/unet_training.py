@@ -11,6 +11,8 @@ import torch.nn as nn
 from absl import flags
 import torch.optim as optim
 import faulthandler
+import shutil
+from cumulo import __file__ as arch_src
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
@@ -26,12 +28,13 @@ flags.DEFINE_integer('bs', 32, help='Batch size for training and validation.')
 flags.DEFINE_integer('dataset_bs', 32, help='Batch size for training and validation.')
 flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
 flags.DEFINE_integer('tile_size', 128, help='Tile size.')
+flags.DEFINE_integer('nb_classes', 9, help='Number of classes.')
 flags.DEFINE_integer('center_distance', None, help='Distance between base points of tile extraction.')
 flags.DEFINE_bool('val', False, help='Flag for validation after each epoch.')
 flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
 flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
 flags.DEFINE_bool('examples', False, help='Save some training examples in each epoch')
-flags.DEFINE_bool('local_norm', True, help='Standardize each image channel-wise. If False the statistics of a data subset will be used.')
+flags.DEFINE_bool('local_norm', False, help='Standardize each image channel-wise. If False the statistics of a data subset will be used.')
 flags.DEFINE_integer('examples_num', None, help='How many samples should get saved as example?')
 flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequency')
 flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
@@ -42,7 +45,6 @@ FLAGS = flags.FLAGS
 def main(_):
     # Initialize parameters and prepare data
     nb_epochs = FLAGS.nb_epochs
-    nb_classes = 9
     lr = 1e-3
     weight_decay = 0.5e-4
 
@@ -67,13 +69,7 @@ def main(_):
         m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
         std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
     except FileNotFoundError:
-        print("Computing dataset mean, standard deviation and class ratios")
-        dataset = CumuloDataset(FLAGS.d_path, batch_size=FLAGS.dataset_bs, tile_size=FLAGS.tile_size,
-                                center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
-        weights, class_weights, m, std = get_dataset_statistics(dataset, nb_classes, tile_size=FLAGS.tile_size)
-        np.save(os.path.join(FLAGS.d_path, "class-weights.npy"), class_weights)
-        np.save(os.path.join(FLAGS.d_path, "mean.npy"), m)
-        np.save(os.path.join(FLAGS.d_path, "std.npy"), std)
+        print("Statistics were not found!")
 
     if FLAGS.local_norm:
         print("Using local normalization.")
@@ -115,9 +111,9 @@ def main(_):
 
     # Prepare model
     if FLAGS.model == 'weak':
-        model = UNet_weak(in_channels=13, out_channels=nb_classes, starting_filters=32)
+        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32)
     elif FLAGS.model == 'equi':
-        model = UNet_equi(in_channels=13, out_channels=nb_classes, starting_filters=32, rot=FLAGS.rot)
+        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
     print('Model initialized!')
     model = model.to(device)
 
@@ -132,18 +128,26 @@ def main(_):
 
     lr_sched = torch.optim.lr_scheduler.CyclicLR(
         optimizer,
-        base_lr=1.2e-5,  # 10^-6 for weak
-        max_lr=2e-4,  # 10^-4 for weak
+        base_lr=1e-6,  # 1e-6 for weak, 1.2e-5 for equi
+        max_lr=1e-4,  # 1e-4 for weak, 2e-4 for equi
         cycle_momentum=True if 'momentum' in optimizer.defaults else False
     )
 
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    criterion1 = nn.BCEWithLogitsLoss()
+    criterion2 = nn.CrossEntropyLoss(weight=class_weights.to(device)[1:])
+
+    # backup training script and src folder
+    shutil.copyfile(__file__, FLAGS.m_path + '/0-' + os.path.basename(__file__))
+    os.chmod(FLAGS.m_path + '/0-' + os.path.basename(__file__), 0o755)
+    pkg_path = os.path.dirname(arch_src)
+    backup_path = os.path.join(FLAGS.m_path, 'src_backup')
+    shutil.make_archive(backup_path, 'gztar', pkg_path)
 
     # Start training
-    train(model, FLAGS.m_path, datasets, criterion, optimizer, lr_sched, num_epochs=nb_epochs, device=device)
+    train(model, FLAGS.m_path, datasets, criterion1, criterion2, optimizer, lr_sched, num_epochs=nb_epochs, device=device)
 
 
-def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1000, device='cuda'):
+def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler, num_epochs=1000, device='cuda'):
     """
     Trains a model for all epochs using the provided dataloader.
     """
@@ -187,14 +191,16 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
 
             # Iterate over data.
             for sample_ix, sample in enumerate(tqdm(dataloaders[phase])):
-                inputs, labels = sample
+                inputs, labels, cloud_mask = sample
 
                 if FLAGS.merged:
                     inputs = inputs.reshape(-1, *tuple(inputs.shape[2:]))
                     labels = labels.reshape(-1, *tuple(inputs.shape[2:]))
+                    cloud_mask = cloud_mask.reshape(-1, *tuple(inputs.shape[2:]))
 
                 inputs = inputs.to(device)
                 labels = labels.to(device)
+                cloud_mask = cloud_mask.to(device)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
@@ -202,14 +208,14 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                 # forward
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs.type(torch.float32))
-                    mask = labels != -1
+                    mask = labels > 0  # get labeled cloud pixels
                     loss = 0
                     for ix in range(mask.shape[0]):
                         bmask = mask[ix]
                         blabels = labels[ix][bmask]
-                        bmask = bmask.unsqueeze(0).expand_as(outputs[ix])
-                        bouts = outputs[ix][bmask].reshape(outputs.shape[1], -1).transpose(0, 1)
-                        loss += criterion(bouts, blabels.long())
+                        bmask = bmask.unsqueeze(0).expand_as(outputs[ix][1:])
+                        bouts = outputs[ix][1:][bmask].reshape(outputs.shape[1]-1, -1).transpose(0, 1)
+                        loss += (criterion1(outputs[ix][0], cloud_mask[ix]) + 2 * criterion2(bouts, blabels.long())) / 3  # BCEWithLogitsLoss for cloud mask, CE for labels
                     loss /= mask.shape[0]
 
                     # backward + optimize only if in training phase
@@ -224,6 +230,7 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
 
                 # statistics
                 running_loss += loss.item()
+                print(running_loss / (sample_ix + 1))
                 accuracy = float(np.sum(output[mask] == labels[mask]) / output[mask].shape)
                 running_accuracy += accuracy
 
@@ -259,16 +266,17 @@ def train(model, m_path, datasets, criterion, optimizer, scheduler, num_epochs=1
                 best_acc = epoch_acc
                 torch.save(model.state_dict(), os.path.join(m_path, f'val_best'))
                 torch.save(model.state_dict(), os.path.join(m_path, f'val_best_backup'))
-            if phase == 'train' and epoch_loss < best_loss:
+            elif phase == 'train' and epoch_loss < best_loss:
                 best_loss = epoch_loss
+                model.eval()
                 torch.save(model.state_dict(), os.path.join(m_path, f'train_best'))
                 torch.save(model.state_dict(), os.path.join(m_path, f'train_best_backup'))
-            else:
+                model.train()
+            if phase == 'train':
+                model.eval()
                 torch.save(model.state_dict(), os.path.join(m_path, f'last_model'))
                 torch.save(model.state_dict(), os.path.join(m_path, f'last_model_backup'))
-
-        for phase in datasets:
-            datasets[phase].next_epoch()
+                model.train()
 
         with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
             pkl.dump(training_info, f)
