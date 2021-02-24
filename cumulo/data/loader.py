@@ -47,7 +47,6 @@ def get_most_frequent_label(labels):
 
         Returns the most frequent label for each whole instance.
     """
-
     labels = labels.squeeze()
     mask = np.any(labels != -1, axis=2)
     lpixels = labels[mask]
@@ -154,13 +153,14 @@ class CumuloDataset(Dataset):
                 cloud_mask = np.zeros((self.batch_size, self.tile_size, self.tile_size))
                 for tile in range(self.batch_size):
                     clabels = tiles[2].data[tile].squeeze()[..., 0]  # take lowest clouds as GT
+                    # clabels = get_most_frequent_label(tiles[2].data[tile])
                     cloud_mask[tile] = tiles[1].data[tile].squeeze()
                     # remove labels in non-cloud regions (cloud classes are from 0 to 7, pixels without label are -1)
                     # => add 1, multiply with cloud mask to set labels in non-cloud regions to 0 and substract 1 to get
                     # rid of cloud mask again
-                    clabels[clabels >= 0] += 1
-                    clabels *= cloud_mask[tile].astype(np.int8)
-                    clabels[clabels != -1] -= 1
+                    # clabels[clabels >= 0] += 1
+                    # clabels *= cloud_mask[tile].astype(np.int8)
+                    # clabels[clabels != -1] -= 1
                     labels[tile] = clabels
                     radiances[tile] = tiles[0].data[tile]
                 if self.normalizer is not None:

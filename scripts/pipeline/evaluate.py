@@ -5,10 +5,11 @@ import numpy as np
 from absl import app
 from absl import flags
 import sklearn.metrics as sm
+from cumulo.utils.utils import include_cloud_mask
 
 flags.DEFINE_string('path', None, help='Location of predictions')
 flags.DEFINE_string('o_path', None, help='Save location')
-flags.DEFINE_bool('full', False, help='Include file-wise evaluation in report.')
+flags.DEFINE_bool('full', True, help='Include file-wise evaluation in report.')
 FLAGS = flags.FLAGS
 
 
@@ -43,22 +44,24 @@ def main(_):
     total_c_predictions = np.array([])
     for file in tqdm(files):
         data = np.load(file)
-        labels = data['labels']
-        prediction = data['prediction']
+        labels = data['labels']  # Raw labels without cloud mask
+        cloud_mask = data['cloud_mask']  # Raw cloud mask
+        prediction = data['prediction']  # predictions where cloud mask and labels have been merged
 
+        # --- exclude pixels at the borders which were too small for another tile ---
         valid = prediction != -1
+        cloud_mask = cloud_mask[valid]
         labels = labels[valid]
         prediction = prediction[valid]
 
         # --- cloud mask evaluation ---
-        c_labels = labels.copy()
-        c_labels[labels != 0] = 1
         c_prediction = prediction.copy()
         c_prediction[prediction != 0] = 1
-        total_c_labels = np.append(total_c_labels, c_labels)
+        total_c_labels = np.append(total_c_labels, cloud_mask)
         total_c_predictions = np.append(total_c_predictions, c_prediction)
 
         # --- cloud type evaluation ---
+        labels = include_cloud_mask(labels, cloud_mask)
         mask = np.logical_and(labels != -1, labels != 0)
         labels = labels[mask]
         prediction = prediction[mask]
@@ -66,10 +69,10 @@ def main(_):
         total_predictions = np.append(total_predictions, prediction)
         if FLAGS.full:
             report += f"#### {file.replace(FLAGS.path, '')} ####\n\n"
-            cm_cr_txt = sm.classification_report(c_labels, c_prediction, labels=cm_targets)
+            cm_cr_txt = sm.classification_report(cloud_mask, c_prediction, labels=cm_targets)
             report += 'Cloud mask eval:\n\n' + cm_cr_txt + '\n\n'
-            cf_matrix = sm.confusion_matrix(c_labels, c_prediction)
-            report += write_confusion_matrix(cf_matrix, get_target_names(c_labels, c_prediction, cm_targets)) + '\n\n'
+            cf_matrix = sm.confusion_matrix(cloud_mask, c_prediction)
+            report += write_confusion_matrix(cf_matrix, get_target_names(cloud_mask, c_prediction, cm_targets)) + '\n\n'
             ct_cr_txt = sm.classification_report(labels, prediction, labels=ct_targets)
             report += 'Cloud type eval:\n\n' + ct_cr_txt + '\n\n'
             cf_matrix = sm.confusion_matrix(labels, prediction)

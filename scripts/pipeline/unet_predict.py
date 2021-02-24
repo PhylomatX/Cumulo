@@ -4,7 +4,7 @@ import math
 import os
 import sys
 from cumulo.data.loader import CumuloDataset
-from cumulo.utils.utils import GlobalNormalizer, TileExtractor
+from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer, TileExtractor, include_cloud_mask
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
 from absl import app
@@ -35,15 +35,18 @@ flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequ
 flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
 flags.DEFINE_float('augment_prob', 0, help='Augmentation probability')
 FLAGS = flags.FLAGS
-# add arg of form --flagfile 'PATH_TO_FLAGFILE' at the beginning
+# add arg of form --flagfile 'PATH_TO_FLAGFILE' at the beginning and add --o_path and --pred_num
+# python3 scripts/pipeline/unet_predict.py --flagfile ../Data/models/21_02_22_weak_newloss/flagfile.txt --o_path ../Data/models/21_02_22_weak_newloss/predictions --pred_num 50
 
 
 def load_model(model_dir, use_cuda):
     model = None
     if FLAGS.model == 'weak':
         model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32)
+        print("Using weak model!")
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
+        print("Using equi model!")
     if model is None:
         raise ValueError('Model type not known.')
 
@@ -79,7 +82,12 @@ def predict_tiles(model, tiles, use_cuda, batch_size: int = 64):
         if use_cuda:
             inputs = inputs.cuda()
         outputs = model(inputs)
-        outputs = torch.argmax(outputs, 1).cpu().detach().numpy()
+        outputs = outputs.cpu().detach().numpy()
+        cloud_mask_pred = outputs[:, 0, ...]
+        cloud_mask_pred[cloud_mask_pred < 0.5] = 0
+        cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
+        cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
+        outputs = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
         if upper > tiles.shape[0]:
             predictions[ix:] = outputs[:remaining]
         else:
@@ -88,18 +96,16 @@ def predict_tiles(model, tiles, use_cuda, batch_size: int = 64):
     return predictions
 
 
-def include_cloud_mask(labels, cloud_mask):
-    labels[labels >= 0] += 1
-    return labels * cloud_mask
-
-
 def main(_):
     m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
     s = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
     # dataset loader
     tile_extr = TileExtractor()
-    normalizer = GlobalNormalizer(m, s)
+    if FLAGS.local_norm:
+        normalizer = LocalNormalizer()
+    else:
+        normalizer = GlobalNormalizer(m, s)
     try:
         test_idx = np.load(os.path.join(FLAGS.m_path, 'test_idx.npy'))
         print(f"Found test set with {len(test_idx)} files.")
@@ -120,13 +126,12 @@ def main(_):
 
     for swath in dataset:
         filename, tiles, locations, cloud_mask, labels = swath
-        labels = include_cloud_mask(labels.data, cloud_mask.data)
         merged = np.ones(cloud_mask.squeeze().shape) * -1
         predictions = predict_tiles(model, tiles, use_cuda, batch_size=FLAGS.bs)
         for ix, loc in enumerate(locations):
             merged[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
         np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
-                 prediction=merged, labels=labels.squeeze())
+                 prediction=merged, labels=labels.squeeze(), cloud_mask=cloud_mask.squeeze())
 
 
 if __name__ == '__main__':

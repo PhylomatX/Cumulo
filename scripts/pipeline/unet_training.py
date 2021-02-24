@@ -16,7 +16,7 @@ from cumulo import __file__ as arch_src
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
-from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer, get_dataset_statistics
+from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer, include_cloud_mask
 
 flags.DEFINE_string('d_path', None, help='Data path')
 flags.DEFINE_string('m_path', None, help='Model path')
@@ -134,7 +134,7 @@ def main(_):
     )
 
     criterion1 = nn.BCEWithLogitsLoss()
-    criterion2 = nn.CrossEntropyLoss(weight=class_weights.to(device)[1:])
+    criterion2 = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     # backup training script and src folder
     shutil.copyfile(__file__, FLAGS.m_path + '/0-' + os.path.basename(__file__))
@@ -208,7 +208,7 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                 # forward
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs.type(torch.float32))
-                    mask = labels > 0  # get labeled cloud pixels
+                    mask = labels >= 0  # get labeled pixels (independent from cloud mask)
                     loss = 0
                     for ix in range(mask.shape[0]):
                         bmask = mask[ix]
@@ -224,14 +224,21 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                         optimizer.step()
                         scheduler.step()
 
-                output = np.argmax(outputs.cpu().detach().numpy(), axis=1)
+                outputs = outputs.cpu().detach().numpy()
+                cloud_mask_pred = outputs[:, 0, ...]
+                cloud_mask_pred[cloud_mask_pred < 0.5] = 0
+                cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
+                cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
+                output = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
                 labels = labels.cpu().detach().numpy()
                 mask = mask.cpu().detach().numpy()
+                inputs = inputs.cpu().detach().numpy()
+                cloud_mask = cloud_mask.cpu().detach().numpy()
 
                 # statistics
                 running_loss += loss.item()
-                print(running_loss / (sample_ix + 1))
-                accuracy = float(np.sum(output[mask] == labels[mask]) / output[mask].shape)
+                print(f"Epoch: {epoch} - Loss: {running_loss / (sample_ix + 1)}")
+                accuracy = float(np.sum(cloud_class_pred[mask] == labels[mask]) / cloud_class_pred[mask].shape)
                 running_accuracy += accuracy
 
                 if phase == 'train' and epoch < 2:
@@ -243,12 +250,11 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                 # save training examples
                 if FLAGS.examples and epoch % FLAGS.analysis_freq == 0:
                     if sample_ix == 0:
-                        inputs = inputs.cpu().detach().numpy()
                         examples_num = FLAGS.examples_num
                         if examples_num is None:
                             examples_num = inputs.shape[0]
                         np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'), inputs=inputs[:examples_num],
-                                 labels=labels[:examples_num], outputs=output[:examples_num])
+                                 labels=labels[:examples_num], outputs=output[:examples_num], cloud_mask=cloud_mask[:examples_num])
 
             epoch_loss = running_loss / len(datasets[phase])
             epoch_acc = running_accuracy / len(datasets[phase])

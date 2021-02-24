@@ -43,6 +43,11 @@ def make_directory(dir_path):
         os.makedirs(dir_path)
 
 
+def include_cloud_mask(labels, cloud_mask):
+    labels[labels >= 0] += 1
+    return labels * cloud_mask
+
+
 def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
     weights = np.zeros(nb_classes)
     m = np.zeros(13)
