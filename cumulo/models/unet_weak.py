@@ -15,12 +15,12 @@ class ConvConv(nn.Module):
         super(ConvConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, stride=1),
-            # nn.GroupNorm(int(0.5 * out_channels), out_channels),
-            nn.BatchNorm2d(out_channels, momentum=bn_momentum),
+            nn.GroupNorm(int(0.5 * out_channels), out_channels),
+            # nn.BatchNorm2d(out_channels, momentum=bn_momentum),
             nn.ReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, 3, padding=1, stride=1),
-            # nn.GroupNorm(int(0.5 * out_channels), out_channels),
-            nn.BatchNorm2d(out_channels, momentum=bn_momentum),
+            nn.GroupNorm(int(0.5 * out_channels), out_channels),
+            # nn.BatchNorm2d(out_channels, momentum=bn_momentum),
             nn.ReLU(inplace=True)
         )
 

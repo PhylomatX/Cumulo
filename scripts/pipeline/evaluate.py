@@ -7,7 +7,7 @@ from absl import flags
 import sklearn.metrics as sm
 
 flags.DEFINE_string('path', None, help='Location of predictions')
-flags.DEFINE_string('o_path', None, help='Save location')
+flags.DEFINE_string('o_path', None, help='Save location, defaults to path.')
 flags.DEFINE_bool('full', False, help='Include file-wise evaluation in report.')
 FLAGS = flags.FLAGS
 

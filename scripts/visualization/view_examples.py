@@ -28,12 +28,15 @@ def main(_):
         data = np.load(os.path.join(FLAGS.path, file))
         labels = data['labels']
         outputs = data['outputs']
+        cloud_mask = data['cloud_mask']
         for i in range(sample_interval[0], sample_interval[1]):
-            fig, axs = plt.subplots(1, 2, figsize=(15, 8))
+            fig, axs = plt.subplots(1, 3, figsize=(20, 10))
             axs[0].imshow(outputs[i])
             axs[1].imshow(labels[i])
+            axs[2].imshow(cloud_mask[i])
             axs[0].set_title(f'output - {file}_{i}')
             axs[1].set_title('label')
+            axs[2].set_title('cloud_mask')
             plt.show()
 
 
