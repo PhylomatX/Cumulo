@@ -107,7 +107,7 @@ class CumuloDataset(Dataset):
 
     def __init__(self, d_path, ext="nc", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
                  file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, center_distance=None,
-                 augment_prob: float = 0):
+                 augment_prob: float = 0, offset=0):
         self.root_dir = d_path
         self.ext = ext
         self.file_size = file_size
@@ -127,6 +127,7 @@ class CumuloDataset(Dataset):
         self.tile_size = tile_size
         self.center_distance = center_distance
         self.augment_prob = augment_prob
+        self.offset = offset
 
     def __len__(self):
         if self.ext in ["npz", "nc"]:
@@ -147,7 +148,7 @@ class CumuloDataset(Dataset):
                 # On-the-fly tile generation
                 tiles, _ = sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=self.tile_size,
                                                           batch_size=self.batch_size,
-                                                          center_distance=self.center_distance)
+                                                          center_distance=self.center_distance, offset=self.offset)
                 radiances = np.zeros((self.batch_size, 13, self.tile_size, self.tile_size))
                 labels = np.zeros((self.batch_size, self.tile_size, self.tile_size))
                 cloud_mask = np.zeros((self.batch_size, self.tile_size, self.tile_size))
