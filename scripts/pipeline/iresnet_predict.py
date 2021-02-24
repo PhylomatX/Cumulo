@@ -4,7 +4,7 @@ import os
 
 from cumulo.utils.prediction_utils import save_labels
 from cumulo.data.loader import CumuloDataset
-from cumulo.utils.utils import make_directory, Normalizer, TileExtractor
+from cumulo.utils.utils import make_directory, GlobalNormalizer, TileExtractor
 
 
 def load_iresnet(model_dir, use_cuda):
@@ -55,7 +55,7 @@ if __name__ == "__main__":
 
     # dataset loader
     tile_extr = TileExtractor()
-    normalizer = Normalizer(m, s)
+    normalizer = GlobalNormalizer(m, s)
     dataset = CumuloDataset(d_path="../DATA/nc/", ext="nc", label_preproc=None, normalizer=normalizer,
                             tiler=tile_extr)
 

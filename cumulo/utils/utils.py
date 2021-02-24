@@ -43,6 +43,11 @@ def make_directory(dir_path):
         os.makedirs(dir_path)
 
 
+def include_cloud_mask(labels, cloud_mask):
+    labels[labels >= 0] += 1
+    return labels * cloud_mask
+
+
 def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
     weights = np.zeros(nb_classes)
     m = np.zeros(13)
@@ -50,13 +55,13 @@ def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
     if nb_samples is None:
         nb_samples = len(dataset)
     nb_tiles = nb_samples
-    rads, labels = dataset[0]
+    rads, labels, _ = dataset[0]
     if len(rads.shape) == 4:
         nb_tiles *= rads.shape[0]
 
     batch_size = 1
     for sample in tqdm(range(nb_samples)):
-        rads, labels = dataset[sample]
+        rads, labels, _ = dataset[sample]
         if len(rads.shape) == 4:
             batch_size = rads.shape[0]
         for i in range(batch_size):
@@ -64,6 +69,9 @@ def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
             clabels = labels[i].numpy()
             weights += np.histogram(clabels, bins=range(nb_classes + 1), normed=False)[0]
             m += np.mean(crads, axis=(1, 2))
+        print(f"Sample: {sample}")
+        print(f"weights: {weights / np.sum(weights)}")
+        print(f"mean: {m / (sample * rads.shape[0])}")
 
     m /= nb_tiles
     m = m.reshape((13, 1, 1))
@@ -73,6 +81,8 @@ def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
         for i in range(batch_size):
             crads = rads[i].numpy()
             s += np.sum((crads - m)**2, (1, 2))
+        print(f"weights: {weights / np.sum(weights)}")
+        print(f"mean: {m}")
 
     s /= nb_tiles * tile_size ** 2
     std = np.sqrt(s)
@@ -82,7 +92,7 @@ def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
     return weights, weights_div, m, std
 
 
-class Normalizer(object):
+class GlobalNormalizer(object):
 
     def __init__(self, mean, std):
         self.mean = mean
@@ -90,6 +100,16 @@ class Normalizer(object):
 
     def __call__(self, image):
         return (image - self.mean) / self.std
+
+
+class LocalNormalizer(object):
+
+    def __call__(self, image):
+        for b in range(image.shape[0]):
+            means = np.mean(image[b], axis=(1, 2)).reshape((image[b].shape[0], 1, 1))
+            stds = np.std(image[b], axis=(1, 2)).reshape((image[b].shape[0], 1, 1))
+            image[b] = (image[b] - means) / stds
+        return image
 
 
 class TileExtractor:
@@ -141,3 +161,4 @@ def tile_collate(swath_tiles):
     target = np.hstack([labels for *_, labels in swath_tiles])
 
     return torch.from_numpy(data).float(), torch.from_numpy(target).long()
+

@@ -13,7 +13,7 @@ from cumulo.models.iresnet import multiscale_conv_iResNet
 from cumulo.utils.iresnet_utils import get_init_batch, train, test, save_model
 from cumulo.data.loader import CumuloDataset
 from cumulo.utils.metrics import scores_per_class
-from cumulo.utils.utils import Normalizer, get_dataset_statistics, get_hms, make_directory, get_tile_sampler, tile_collate
+from cumulo.utils.utils import GlobalNormalizer, get_dataset_statistics, get_hms, make_directory, get_tile_sampler, tile_collate
 
 # monitor training
 try:
@@ -91,7 +91,7 @@ except:
     np.save(os.path.join(save_dir, "mean.npy"), m)
     np.save(os.path.join(save_dir, "std.npy"), s)
 
-normalizer = Normalizer(m, s)
+normalizer = GlobalNormalizer(m, s)
 class_weights = torch.from_numpy(class_weights).float()
 
 # get train, validation, test sets by randomly splitting the set of swaths

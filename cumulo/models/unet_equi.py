@@ -6,10 +6,10 @@ from e2cnn import gspaces
 def ConvConv(in_type, out_type, bn_momentum=0.1):
     conv_conv = enn.SequentialModule(
         enn.R2Conv(in_type, out_type, kernel_size=3, padding=1, stride=1),
-        enn.InnerBatchNorm(out_type, momentum=bn_momentum),
+        enn.InnerBatchNorm(out_type, momentum=bn_momentum, track_running_stats=False),
         enn.ReLU(out_type, inplace=True),
         enn.R2Conv(out_type, out_type, kernel_size=3, padding=1, stride=1),
-        enn.InnerBatchNorm(out_type, momentum=bn_momentum),
+        enn.InnerBatchNorm(out_type, momentum=bn_momentum, track_running_stats=False),
         enn.ReLU(out_type, inplace=True)
     )
     return conv_conv
@@ -54,10 +54,11 @@ def extract_img(size, in_tensor):
 
 class UNet_equi(nn.Module):
 
-    def __init__(self, in_channels, out_channels, starting_filters=32, bn_momentum=0.1):
+    def __init__(self, in_channels, out_channels, starting_filters=32, bn_momentum=0.1, rot=2):
         super(UNet_equi, self).__init__()
 
-        self.r2_act = gspaces.Rot2dOnR2(N=2)
+        self.r2_act = gspaces.Rot2dOnR2(N=rot)
+        print(f"Using {rot} rotations.")
 
         self.in_channels = enn.FieldType(self.r2_act, in_channels * [self.r2_act.trivial_repr])
         self.filters = enn.FieldType(self.r2_act, starting_filters * [self.r2_act.regular_repr])

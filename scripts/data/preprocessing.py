@@ -49,8 +49,11 @@ def main(_):
     files = os.listdir(FLAGS.nc_path)
     removed = 0
     artefacts = os.path.join(FLAGS.nc_path, 'artefacts')
+    no_labels = os.path.join(FLAGS.nc_path, 'no_labels')
     if not os.path.exists(artefacts):
         os.makedirs(artefacts)
+    if not os.path.exists(no_labels):
+        os.makedirs(no_labels)
     clean = os.path.join(FLAGS.nc_path, 'clean')
     if not os.path.exists(clean):
         os.makedirs(clean)
@@ -61,8 +64,11 @@ def main(_):
         except:
             print('Invalid file')
             continue
-        if check_size(radiances) or check_for_stripe_pattern(radiances) or check_for_empty_labels(FLAGS.size, labels):
+        if check_size(radiances) or check_for_stripe_pattern(radiances):
             os.rename(filename, filename.replace(FLAGS.nc_path, artefacts + '/'))
+            removed += 1
+        elif check_for_empty_labels(FLAGS.size, labels):
+            os.rename(filename, filename.replace(FLAGS.nc_path, no_labels + '/'))
             removed += 1
         else:
             os.rename(filename, filename.replace(FLAGS.nc_path, clean + '/'))
