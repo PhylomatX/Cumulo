@@ -82,21 +82,6 @@ def read_npz(npz_file):
     return file['radiances'], file['labels']
 
 
-def get_mf_label(labels):
-    """ See tile generation method. """
-    return labels[..., 0]
-
-
-def get_low_labels(labels):
-    """ See tile generation method. """
-    return labels[..., 1]
-
-
-def get_low_labels_raw(labels):
-    """ See tile generation method. """
-    return labels[..., 2]
-
-
 def include_cloud_mask(labels, cloud_mask):
     labels = labels.copy()
     labels[labels >= 0] += 1
@@ -142,7 +127,7 @@ class CumuloDataset(Dataset):
                 if self.normalizer is not None:
                     tiles = self.normalizer(tiles)
                 if self.label_preproc is not None:
-                    labels = self.label_preproc(labels)
+                    labels = labels[..., 0]
                 return self.file_paths[idx], tiles, locations, cloud_mask, labels
             else:
                 # On-the-fly tile generation

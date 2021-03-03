@@ -114,26 +114,54 @@ class LocalNormalizer(object):
 
 class TileExtractor:
 
-    def __init__(self, t_width=128, t_height=128):
+    def __init__(self, tile_size, offset):
+        """
+        Args:
+             tile_size: size of tiles (size of input to network)
+             offset: size difference between input and output of network (e.g. due to valid convolutions)
+        """
 
-        self.t_width = t_width
-        self.t_height = t_height
+        self.tile_size = tile_size
+        self.offset = offset
 
     def __call__(self, image):
+        """
+        Can be used to split a swath into multiple tiles.
+
+        Args:
+            image: channels of full swath
+
+        Returns:
+            tiles and locations where locations are the positions of the output of the network
+            (including the possible offset, see initialization).
+        """
 
         img_width = image.shape[1]
         img_height = image.shape[2]
 
-        nb_tiles_row = img_width // self.t_width
-        nb_tiles_col = img_height // self.t_height
+        output_size = self.tile_size - 2 * self.offset
+        nb_outputs_row = (img_width - 2 * self.offset) // output_size
+        nb_outputs_col = (img_height - 2 * self.offset) // output_size
 
         tiles = []
         locations = []
 
-        for i in range(nb_tiles_row):
-            for j in range(nb_tiles_col):
-                tiles.append(image[:, i * self.t_width: (i + 1) * self.t_width, j * self.t_height: (j + 1) * self.t_height])
-                locations.append(((i * self.t_width, (i + 1) * self.t_width), (j * self.t_height, (j + 1) * self.t_height)))
+        for i in range(nb_outputs_row):
+            for j in range(nb_outputs_col):
+                tiles.append(image[:, i * output_size: 2 * self.offset + (i + 1) * output_size, j * output_size: 2 * self.offset + (j + 1) * output_size])
+                locations.append(((self.offset + i * output_size, self.offset + (i + 1) * output_size),
+                                  (self.offset + j * output_size, self.offset + (j + 1) * output_size)))
+
+        # gather tiles from border regions
+        for i in range(nb_outputs_row):
+            tiles.append(image[:, i * output_size: 2 * self.offset + (i + 1) * output_size, img_height - self.tile_size:img_height])
+            locations.append(((self.offset + i * output_size, self.offset + (i + 1) * output_size),
+                              (self.offset + img_height - self.tile_size, img_height - self.offset)))
+
+        for j in range(nb_outputs_col):
+            tiles.append(image[:, img_width - self.tile_size:img_width, j * output_size: 2 * self.offset + (j + 1) * output_size])
+            locations.append(((self.offset + img_width - self.tile_size, img_width - self.offset),
+                              (self.offset + j * output_size, self.offset + (j + 1) * output_size)))
 
         tiles = np.stack(tiles)
         locations = np.stack(locations)
