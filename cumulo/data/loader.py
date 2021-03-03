@@ -135,9 +135,9 @@ class CumuloDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.ext == "nc":
-            radiances, cloud_mask, labels = read_nc(self.file_paths[idx])
             if self.pred:
                 # Prediction mode
+                radiances, cloud_mask, labels = read_nc(self.file_paths[idx])
                 tiles, locations = self.tiler(radiances)
                 if self.normalizer is not None:
                     tiles = self.normalizer(tiles)
@@ -146,9 +146,15 @@ class CumuloDataset(Dataset):
                 return self.file_paths[idx], tiles, locations, cloud_mask, labels
             else:
                 # On-the-fly tile generation
-                tiles, _ = sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=self.tile_size,
-                                                          batch_size=self.batch_size,
-                                                          center_distance=self.center_distance, offset=self.offset)
+                tiles = None
+                next_file = idx
+                while tiles is None:
+                    # If one nc file has no labeled pixels for the given tile size, another random nc file is used
+                    radiances, cloud_mask, labels = read_nc(self.file_paths[next_file])
+                    tiles, _ = sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=self.tile_size,
+                                                              batch_size=self.batch_size,
+                                                              center_distance=self.center_distance, offset=self.offset)
+                    next_file = np.random.randint(0, len(self.file_paths))
                 radiances = np.zeros((self.batch_size, 13, self.tile_size, self.tile_size))
                 labels = np.zeros((self.batch_size, self.tile_size, self.tile_size))
                 cloud_mask = np.zeros((self.batch_size, self.tile_size, self.tile_size))

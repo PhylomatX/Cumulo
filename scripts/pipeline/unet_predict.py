@@ -130,8 +130,8 @@ def main(_):
         predictions = predict_tiles(model, tiles, use_cuda, batch_size=FLAGS.bs)
         for ix, loc in enumerate(locations):
             merged[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
-        np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
-                 prediction=merged, labels=labels.squeeze(), cloud_mask=cloud_mask.squeeze())
+        np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')), locations=locations,
+                 prediction=merged, labels=labels.squeeze(), cloud_mask=cloud_mask.squeeze(), predictions=predictions)
 
 
 if __name__ == '__main__':
