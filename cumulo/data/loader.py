@@ -90,7 +90,7 @@ def include_cloud_mask(labels, cloud_mask):
 
 class CumuloDataset(Dataset):
 
-    def __init__(self, d_path, ext="nc", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
+    def __init__(self, d_path, ext="nc", normalizer=None, indices=None, tiler=None,
                  file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, center_distance=None,
                  augment_prob: float = 0, offset=0):
         self.root_dir = d_path
@@ -105,7 +105,6 @@ class CumuloDataset(Dataset):
             self.file_paths = [self.file_paths[i] for i in indices]
 
         self.normalizer = normalizer
-        self.label_preproc = label_preproc
         self.tiler = tiler
         self.pred = pred
         self.batch_size = batch_size
@@ -123,12 +122,14 @@ class CumuloDataset(Dataset):
             if self.pred:
                 # Prediction mode
                 radiances, cloud_mask, labels = read_nc(self.file_paths[idx])
-                tiles, locations = self.tiler(radiances)
+                labels = labels.data
+                cloud_mask = cloud_mask.data
+                labels = labels[..., 0]  # take lowest clouds as GT
+                merged = include_cloud_mask(labels, cloud_mask)
+                tiles, label_tiles, locations = self.tiler(radiances, merged)
                 if self.normalizer is not None:
                     tiles = self.normalizer(tiles)
-                if self.label_preproc is not None:
-                    labels = labels[..., 0]
-                return self.file_paths[idx], tiles, locations, cloud_mask, labels
+                return self.file_paths[idx], tiles, locations, label_tiles, cloud_mask, labels
             else:
                 # On-the-fly tile generation
                 tiles = None
@@ -164,13 +165,6 @@ class CumuloDataset(Dataset):
                             labels[sample] = np.rot90(labels[sample])
                             cloud_mask[sample] = np.rot90(cloud_mask[sample])
                 return torch.from_numpy(radiances), torch.from_numpy(labels), torch.from_numpy(cloud_mask)
-        elif self.ext == "npz":
-            radiances, labels = read_npz(self.file_paths[idx])
-            if self.normalizer is not None:
-                radiances = self.normalizer(radiances)
-            if self.label_preproc is not None:
-                labels = self.label_preproc(labels)
-        return torch.from_numpy(radiances), torch.from_numpy(labels)
 
     def __str__(self):
         return 'CUMULO'

@@ -8,7 +8,7 @@ import sklearn.metrics as sm
 from cumulo.utils.utils import include_cloud_mask
 
 flags.DEFINE_string('path', None, help='Location of predictions')
-flags.DEFINE_string('o_path', None, help='Save location')
+flags.DEFINE_string('o_path', None, help='Save location, defaults to above path')
 flags.DEFINE_bool('full', True, help='Include file-wise evaluation in report.')
 FLAGS = flags.FLAGS
 

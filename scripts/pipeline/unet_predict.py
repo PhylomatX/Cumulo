@@ -64,22 +64,28 @@ def load_model(model_dir, use_cuda):
     return model
 
 
-def predict_tiles(model, tiles, use_cuda, batch_size: int = 64):
+def predict_tiles(model, tiles, label_tiles, use_cuda, batch_size: int = 64):
     b_num = math.ceil(tiles.shape[0] / batch_size)
     ix = 0
-    predictions = np.zeros((tiles.shape[0], *tiles.shape[2:]))
+    output_size = FLAGS.tile_size - 2 * FLAGS.offset
+    predictions = np.zeros((tiles.shape[0], output_size, output_size))
+    targets = np.zeros((tiles.shape[0], output_size, output_size))
     remaining = 0
     for b in range(b_num):
         batch = np.zeros((batch_size, *tiles.shape[1:]))
+        label_batch = np.zeros((batch_size, *label_tiles.shape[1:]))
         upper = ix + batch_size
         if upper > tiles.shape[0]:
             # fill batch with tiles from the beginning to avoid artefacts due to zero
             # tiles at the end
             remaining = tiles.shape[0] - ix
             batch[:remaining] = tiles[ix:]
+            label_batch[:remaining] = label_tiles[ix:]
             batch[remaining:] = tiles[:upper - tiles.shape[0]]
+            label_batch[remaining:] = label_tiles[:upper - tiles.shape[0]]
         else:
             batch[:] = tiles[ix:ix+batch_size]
+            label_batch[:] = label_tiles[ix:ix+batch_size]
         inputs = torch.from_numpy(batch).float()
         if use_cuda:
             inputs = inputs.cuda()
@@ -90,17 +96,23 @@ def predict_tiles(model, tiles, use_cuda, batch_size: int = 64):
         cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
         cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
         outputs = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
+        label_batch = label_batch.squeeze()[:, FLAGS.offset:FLAGS.tile_size - FLAGS.offset, FLAGS.offset:FLAGS.tile_size - FLAGS.offset]
         if upper > tiles.shape[0]:
             predictions[ix:] = outputs[:remaining]
+            targets[ix:] = label_batch[:remaining]
         else:
             predictions[ix:ix+batch_size] = outputs
+            targets[ix:ix+batch_size] = label_batch
         ix += batch_size
-    return predictions
+    return predictions, targets
 
 
 def main(_):
     m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
     s = np.load(os.path.join(FLAGS.d_path, "std.npy"))
+
+    with open(os.path.join(FLAGS.o_path, 'eval_flagfile.txt'), 'w') as f:
+        f.writelines(FLAGS.flags_into_string())
 
     # dataset loader
     if FLAGS.local_norm:
@@ -129,13 +141,15 @@ def main(_):
         os.makedirs(FLAGS.o_path)
 
     for swath in dataset:
-        filename, tiles, locations, cloud_mask, labels = swath
-        predictions = predict_tiles(model, tiles, use_cuda, batch_size=FLAGS.bs)
+        filename, tiles, locations, label_tiles, cloud_mask, labels = swath
+        predictions, targets = predict_tiles(model, tiles, label_tiles, use_cuda, batch_size=FLAGS.dataset_bs)
         merged = np.ones(cloud_mask.squeeze().shape) * -1
+        merged_target = np.ones(cloud_mask.squeeze().shape) * -1
         for ix, loc in enumerate(locations):
             merged[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
+            merged_target[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = targets[ix]
         np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')), locations=locations,
-                 prediction=merged, labels=labels.squeeze(), cloud_mask=cloud_mask.squeeze(), predictions=predictions)
+                 prediction=merged, target=merged_target, labels=labels.squeeze(), cloud_mask=cloud_mask.squeeze(), predictions=predictions)
 
 
 if __name__ == '__main__':
