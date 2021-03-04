@@ -121,19 +121,19 @@ def main(_):
 
     # Prepare training environment
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    lr_sched = optim.lr_scheduler.StepLR(optimizer, step_size=10000, gamma=0.9)
+    # lr_sched = optim.lr_scheduler.StepLR(optimizer, step_size=10000, gamma=0.9)
 
     # Begin with a very small lr and double it every 100 steps.
     # for grp in optimizer.param_groups:
     #     grp['lr'] = 1e-7
     # lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
 
-    # lr_sched = torch.optim.lr_scheduler.CyclicLR(
-    #     optimizer,
-    #     base_lr=1e-6,  # 1e-6 for weak, 1.2e-5 for equi
-    #     max_lr=1e-4,  # 1e-4 for weak, 2e-4 for equi
-    #     cycle_momentum=True if 'momentum' in optimizer.defaults else False
-    # )
+    lr_sched = torch.optim.lr_scheduler.CyclicLR(
+        optimizer,
+        base_lr=1.2e-5,  # 1e-6 for weak, 1.2e-5 for equi
+        max_lr=2e-4,  # 1e-4 for weak, 2e-4 for equi
+        cycle_momentum=True if 'momentum' in optimizer.defaults else False
+    )
 
     criterion1 = nn.BCEWithLogitsLoss()
     criterion2 = nn.CrossEntropyLoss(weight=class_weights.to(device))
@@ -214,7 +214,7 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                     if offset > 0:
                         labels = labels[:, offset:-offset, offset:-offset]
                         cloud_mask = cloud_mask[:, offset:-offset, offset:-offset]
-                    mask = labels >= 0 & cloud_mask == 1  # get labeled pixels in cloudy regions
+                    mask = labels >= 0  # get labeled pixels (this includes labels in non-cloudy regions as well!)
                     loss = 0
                     for ix in range(mask.shape[0]):
                         bmask = mask[ix]
@@ -222,7 +222,7 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                         cmask = cloud_mask[ix]
                         bmask = bmask.unsqueeze(0).expand_as(outputs[ix][1:])
                         bouts = outputs[ix][1:][bmask].reshape(outputs.shape[1]-1, -1).transpose(0, 1)
-                        loss += (criterion1(outputs[ix][0], cmask) + 4 * criterion2(bouts, blabels.long())) / 5  # BCEWithLogitsLoss for cloud mask, CE for labels
+                        loss += (criterion1(outputs[ix][0], cmask) + 2 * criterion2(bouts, blabels.long())) / 3  # BCEWithLogitsLoss for cloud mask, CE for labels
                     loss /= mask.shape[0]
 
                     # backward + optimize only if in training phase

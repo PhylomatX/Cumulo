@@ -33,7 +33,7 @@ class UpConvConcat(nn.Module):
     def __init__(self, in_type, out_type, bn_momentum=0.1, padding=0):
         super(UpConvConcat, self).__init__()
         self.in_type = in_type
-        self.upconv = enn.R2Upsampling(out_type, scale_factor=2)
+        self.upconv = enn.R2Upsampling(in_type, scale_factor=2)
         self.conv1 = enn.R2Conv(in_type, out_type, kernel_size=1, padding=padding)
         self.conv2 = ConvConv(in_type, out_type, bn_momentum, padding=padding)
 
