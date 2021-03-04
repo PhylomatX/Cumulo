@@ -38,6 +38,8 @@ flags.DEFINE_bool('local_norm', False, help='Standardize each image channel-wise
 flags.DEFINE_integer('examples_num', None, help='How many samples should get saved as example?')
 flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequency')
 flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
+flags.DEFINE_integer('offset', 0, help='Cropping offset for labels in case of valid convolutions')
+flags.DEFINE_integer('padding', 0, help='Padding for convolutions')
 flags.DEFINE_float('augment_prob', 0, help='Augmentation probability')
 FLAGS = flags.FLAGS
 
@@ -97,13 +99,13 @@ def main(_):
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
                                   tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
-                                  augment_prob=FLAGS.augment_prob)
+                                  augment_prob=FLAGS.augment_prob, offset=FLAGS.offset)
 
     if FLAGS.val:
         print("Training with validation!")
         val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
                                     tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
-                                    augment_prob=FLAGS.augment_prob)
+                                    augment_prob=FLAGS.augment_prob, offset=FLAGS.offset)
         datasets = {'train': train_dataset, 'val': val_dataset}
     else:
         print("Training without validation!")
@@ -111,7 +113,7 @@ def main(_):
 
     # Prepare model
     if FLAGS.model == 'weak':
-        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32)
+        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding)
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
     print('Model initialized!')
@@ -119,7 +121,7 @@ def main(_):
 
     # Prepare training environment
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    # lr_sched = optim.lr_scheduler.StepLR(optimizer, step_size=100000, gamma=0.9)
+    # lr_sched = optim.lr_scheduler.StepLR(optimizer, step_size=10000, gamma=0.9)
 
     # Begin with a very small lr and double it every 100 steps.
     # for grp in optimizer.param_groups:
@@ -128,8 +130,8 @@ def main(_):
 
     lr_sched = torch.optim.lr_scheduler.CyclicLR(
         optimizer,
-        base_lr=1e-6,  # 1e-6 for weak, 1.2e-5 for equi
-        max_lr=1e-4,  # 1e-4 for weak, 2e-4 for equi
+        base_lr=1.2e-5,  # 1e-6 for weak, 1.2e-5 for equi
+        max_lr=2e-4,  # 1e-4 for weak, 2e-4 for equi
         cycle_momentum=True if 'momentum' in optimizer.defaults else False
     )
 
@@ -155,6 +157,7 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
 
     best_acc = 0.0
     best_loss = None
+    offset = FLAGS.offset
 
     with open(os.path.join(FLAGS.m_path, 'flagfile.txt'), 'w') as f:
         f.writelines(FLAGS.flags_into_string())
@@ -208,14 +211,18 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                 # forward
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs.type(torch.float32))
-                    mask = labels >= 0  # get labeled pixels (independent from cloud mask)
+                    if offset > 0:
+                        labels = labels[:, offset:-offset, offset:-offset]
+                        cloud_mask = cloud_mask[:, offset:-offset, offset:-offset]
+                    mask = labels >= 0  # get labeled pixels (this includes labels in non-cloudy regions as well!)
                     loss = 0
                     for ix in range(mask.shape[0]):
                         bmask = mask[ix]
                         blabels = labels[ix][bmask]
+                        cmask = cloud_mask[ix]
                         bmask = bmask.unsqueeze(0).expand_as(outputs[ix][1:])
                         bouts = outputs[ix][1:][bmask].reshape(outputs.shape[1]-1, -1).transpose(0, 1)
-                        loss += (criterion1(outputs[ix][0], cloud_mask[ix]) + 2 * criterion2(bouts, blabels.long())) / 3  # BCEWithLogitsLoss for cloud mask, CE for labels
+                        loss += (criterion1(outputs[ix][0], cmask) + 2 * criterion2(bouts, blabels.long())) / 3  # BCEWithLogitsLoss for cloud mask, CE for labels
                     loss /= mask.shape[0]
 
                     # backward + optimize only if in training phase
@@ -225,20 +232,21 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                         scheduler.step()
 
                 outputs = outputs.cpu().detach().numpy()
+                labels = labels.cpu().detach().numpy()
+                inputs = inputs.cpu().detach().numpy()
+                cloud_mask = cloud_mask.cpu().detach().numpy()
                 cloud_mask_pred = outputs[:, 0, ...]
                 cloud_mask_pred[cloud_mask_pred < 0.5] = 0
                 cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
                 cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
                 output = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
-                labels = labels.cpu().detach().numpy()
-                mask = mask.cpu().detach().numpy()
-                inputs = inputs.cpu().detach().numpy()
-                cloud_mask = cloud_mask.cpu().detach().numpy()
+                merged = include_cloud_mask(labels, cloud_mask)
+                mask = merged > 0
 
                 # statistics
                 running_loss += loss.item()
                 print(f"Epoch: {epoch} - Loss: {running_loss / (sample_ix + 1)}")
-                accuracy = float(np.sum(cloud_class_pred[mask] == labels[mask]) / cloud_class_pred[mask].shape)
+                accuracy = float(np.sum(output[mask] == merged[mask]) / output[mask].shape)  # use only labeled pixels in cloudy regions for accuracies
                 running_accuracy += accuracy
 
                 if phase == 'train' and epoch < 2:

@@ -82,21 +82,6 @@ def read_npz(npz_file):
     return file['radiances'], file['labels']
 
 
-def get_mf_label(labels):
-    """ See tile generation method. """
-    return labels[..., 0]
-
-
-def get_low_labels(labels):
-    """ See tile generation method. """
-    return labels[..., 1]
-
-
-def get_low_labels_raw(labels):
-    """ See tile generation method. """
-    return labels[..., 2]
-
-
 def include_cloud_mask(labels, cloud_mask):
     labels = labels.copy()
     labels[labels >= 0] += 1
@@ -105,9 +90,9 @@ def include_cloud_mask(labels, cloud_mask):
 
 class CumuloDataset(Dataset):
 
-    def __init__(self, d_path, ext="nc", normalizer=None, indices=None, label_preproc=get_low_labels, tiler=None,
+    def __init__(self, d_path, ext="nc", normalizer=None, indices=None, tiler=None,
                  file_size=1, pred: bool = False, batch_size: int = 1, tile_size: int = 128, center_distance=None,
-                 augment_prob: float = 0):
+                 augment_prob: float = 0, offset=0):
         self.root_dir = d_path
         self.ext = ext
         self.file_size = file_size
@@ -120,13 +105,13 @@ class CumuloDataset(Dataset):
             self.file_paths = [self.file_paths[i] for i in indices]
 
         self.normalizer = normalizer
-        self.label_preproc = label_preproc
         self.tiler = tiler
         self.pred = pred
         self.batch_size = batch_size
         self.tile_size = tile_size
         self.center_distance = center_distance
         self.augment_prob = augment_prob
+        self.offset = offset
 
     def __len__(self):
         if self.ext in ["npz", "nc"]:
@@ -134,20 +119,28 @@ class CumuloDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.ext == "nc":
-            radiances, cloud_mask, labels = read_nc(self.file_paths[idx])
             if self.pred:
                 # Prediction mode
-                tiles, locations = self.tiler(radiances)
+                radiances, cloud_mask, labels = read_nc(self.file_paths[idx])
+                labels = labels.data
+                cloud_mask = cloud_mask.data
+                labels = labels[..., 0]  # take lowest clouds as GT
+                merged = include_cloud_mask(labels, cloud_mask)
+                tiles, label_tiles, locations = self.tiler(radiances, merged)
                 if self.normalizer is not None:
                     tiles = self.normalizer(tiles)
-                if self.label_preproc is not None:
-                    labels = self.label_preproc(labels)
-                return self.file_paths[idx], tiles, locations, cloud_mask, labels
+                return self.file_paths[idx], tiles, locations, label_tiles, cloud_mask, labels
             else:
                 # On-the-fly tile generation
-                tiles, _ = sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=self.tile_size,
-                                                          batch_size=self.batch_size,
-                                                          center_distance=self.center_distance)
+                tiles = None
+                next_file = idx
+                while tiles is None:
+                    # If one nc file has no labeled pixels for the given tile size, another random nc file is used
+                    radiances, cloud_mask, labels = read_nc(self.file_paths[next_file])
+                    tiles, _ = sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=self.tile_size,
+                                                              batch_size=self.batch_size,
+                                                              center_distance=self.center_distance, offset=self.offset)
+                    next_file = np.random.randint(0, len(self.file_paths))
                 radiances = np.zeros((self.batch_size, 13, self.tile_size, self.tile_size))
                 labels = np.zeros((self.batch_size, self.tile_size, self.tile_size))
                 cloud_mask = np.zeros((self.batch_size, self.tile_size, self.tile_size))
@@ -172,13 +165,6 @@ class CumuloDataset(Dataset):
                             labels[sample] = np.rot90(labels[sample])
                             cloud_mask[sample] = np.rot90(cloud_mask[sample])
                 return torch.from_numpy(radiances), torch.from_numpy(labels), torch.from_numpy(cloud_mask)
-        elif self.ext == "npz":
-            radiances, labels = read_npz(self.file_paths[idx])
-            if self.normalizer is not None:
-                radiances = self.normalizer(radiances)
-            if self.label_preproc is not None:
-                labels = self.label_preproc(labels)
-        return torch.from_numpy(radiances), torch.from_numpy(labels)
 
     def __str__(self):
         return 'CUMULO'

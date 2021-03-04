@@ -33,6 +33,8 @@ flags.DEFINE_bool('local_norm', True, help='Standardize each image channel-wise.
 flags.DEFINE_integer('examples_num', None, help='How many samples should get saved as example?')
 flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequency')
 flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
+flags.DEFINE_integer('offset', 0, help='Cropping offset for labels in case of valid convolutions')
+flags.DEFINE_integer('padding', 0, help='Padding for convolutions')
 flags.DEFINE_float('augment_prob', 0, help='Augmentation probability')
 FLAGS = flags.FLAGS
 # add arg of form --flagfile 'PATH_TO_FLAGFILE' at the beginning and add --o_path and --pred_num
@@ -42,7 +44,7 @@ FLAGS = flags.FLAGS
 def load_model(model_dir, use_cuda):
     model = None
     if FLAGS.model == 'weak':
-        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32)
+        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding)
         print("Using weak model!")
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
@@ -62,22 +64,28 @@ def load_model(model_dir, use_cuda):
     return model
 
 
-def predict_tiles(model, tiles, use_cuda, batch_size: int = 64):
+def predict_tiles(model, tiles, label_tiles, use_cuda, batch_size: int = 64):
     b_num = math.ceil(tiles.shape[0] / batch_size)
     ix = 0
-    predictions = np.zeros((tiles.shape[0], *tiles.shape[2:]))
+    output_size = FLAGS.tile_size - 2 * FLAGS.offset
+    predictions = np.zeros((tiles.shape[0], output_size, output_size))
+    targets = np.zeros((tiles.shape[0], output_size, output_size))
     remaining = 0
     for b in range(b_num):
         batch = np.zeros((batch_size, *tiles.shape[1:]))
+        label_batch = np.zeros((batch_size, *label_tiles.shape[1:]))
         upper = ix + batch_size
         if upper > tiles.shape[0]:
             # fill batch with tiles from the beginning to avoid artefacts due to zero
             # tiles at the end
             remaining = tiles.shape[0] - ix
             batch[:remaining] = tiles[ix:]
+            label_batch[:remaining] = label_tiles[ix:]
             batch[remaining:] = tiles[:upper - tiles.shape[0]]
+            label_batch[remaining:] = label_tiles[:upper - tiles.shape[0]]
         else:
             batch[:] = tiles[ix:ix+batch_size]
+            label_batch[:] = label_tiles[ix:ix+batch_size]
         inputs = torch.from_numpy(batch).float()
         if use_cuda:
             inputs = inputs.cuda()
@@ -88,24 +96,31 @@ def predict_tiles(model, tiles, use_cuda, batch_size: int = 64):
         cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
         cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
         outputs = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
+        label_batch = label_batch.squeeze()[:, FLAGS.offset:FLAGS.tile_size - FLAGS.offset, FLAGS.offset:FLAGS.tile_size - FLAGS.offset]
         if upper > tiles.shape[0]:
             predictions[ix:] = outputs[:remaining]
+            targets[ix:] = label_batch[:remaining]
         else:
             predictions[ix:ix+batch_size] = outputs
+            targets[ix:ix+batch_size] = label_batch
         ix += batch_size
-    return predictions
+    return predictions, targets
 
 
 def main(_):
     m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
     s = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
+    with open(os.path.join(FLAGS.o_path, 'eval_flagfile.txt'), 'w') as f:
+        f.writelines(FLAGS.flags_into_string())
+
     # dataset loader
-    tile_extr = TileExtractor()
     if FLAGS.local_norm:
         normalizer = LocalNormalizer()
+        print("Local normalization!")
     else:
         normalizer = GlobalNormalizer(m, s)
+        print("Global normalization!")
     try:
         test_idx = np.load(os.path.join(FLAGS.m_path, 'test_idx.npy'))
         print(f"Found test set with {len(test_idx)} files.")
@@ -113,6 +128,7 @@ def main(_):
         test_idx = None
     if FLAGS.pred_num is not None:
         test_idx = test_idx[:FLAGS.pred_num]
+    tile_extr = TileExtractor(FLAGS.tile_size, offset=FLAGS.offset)
     dataset = CumuloDataset(d_path=FLAGS.d_path, ext="nc", normalizer=normalizer, tiler=tile_extr, pred=True,
                             indices=test_idx, tile_size=FLAGS.tile_size)
 
@@ -125,13 +141,15 @@ def main(_):
         os.makedirs(FLAGS.o_path)
 
     for swath in dataset:
-        filename, tiles, locations, cloud_mask, labels = swath
+        filename, tiles, locations, label_tiles, cloud_mask, labels = swath
+        predictions, targets = predict_tiles(model, tiles, label_tiles, use_cuda, batch_size=FLAGS.dataset_bs)
         merged = np.ones(cloud_mask.squeeze().shape) * -1
-        predictions = predict_tiles(model, tiles, use_cuda, batch_size=FLAGS.bs)
+        merged_target = np.ones(cloud_mask.squeeze().shape) * -1
         for ix, loc in enumerate(locations):
             merged[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
-        np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
-                 prediction=merged, labels=labels.squeeze(), cloud_mask=cloud_mask.squeeze())
+            merged_target[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = targets[ix]
+        np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')), locations=locations,
+                 prediction=merged, target=merged_target, labels=labels.squeeze(), cloud_mask=cloud_mask.squeeze(), predictions=predictions)
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ import torch.nn as nn
 class ConvConv(nn.Module):
     """ (conv => ReLU) * 2 => maxpool """
 
-    def __init__(self, in_channels, out_channels, bn_momentum=0.1, padding=0):
+    def __init__(self, in_channels, out_channels, bn_momentum=0.1):
         """
         Args:
             in_channels (int): input channel
@@ -14,11 +14,11 @@ class ConvConv(nn.Module):
         """
         super(ConvConv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=padding),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
             # nn.GroupNorm(int(0.5 * out_channels), out_channels),
             nn.BatchNorm2d(out_channels, momentum=bn_momentum, track_running_stats=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=padding),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
             # nn.GroupNorm(int(0.5 * out_channels), out_channels),
             nn.BatchNorm2d(out_channels, momentum=bn_momentum, track_running_stats=False),
             nn.ReLU(inplace=True)
@@ -30,9 +30,9 @@ class ConvConv(nn.Module):
 
 
 class DownConv(nn.Module):
-    def __init__(self, in_channels, out_channels, bn_momentum=0.1, padding=0):
+    def __init__(self, in_channels, out_channels, bn_momentum=0.1):
         super(DownConv, self).__init__()
-        self.conv = ConvConv(in_channels, out_channels, bn_momentum, padding=padding)
+        self.conv = ConvConv(in_channels, out_channels, bn_momentum)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def forward(self, X):
@@ -44,24 +44,25 @@ class DownConv(nn.Module):
 class UpconvConcat(nn.Module):
     """ (conv => ReLU) * 2 => maxpool """
 
-    def __init__(self, in_channels, out_channels, bn_momentum=0.1, padding=0):
+    def __init__(self, in_channels, out_channels, bn_momentum=0.1):
         """
         Args:
             in_channels (int): input channel
             out_channels (int): output channel
         """
         super(UpconvConcat, self).__init__()
-        self.upconv = nn.Upsample(mode='bilinear', scale_factor=2)
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.conv2 = ConvConv(in_channels, out_channels, bn_momentum, padding=padding)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.upconv = nn.Upsample(scale_factor=2)
+        self.conv2 = ConvConv(in_channels, out_channels, bn_momentum)
 
     def forward(self, X1, X2):
-        X1 = self.upconv(X1)
         X1 = self.conv1(X1)
+        X1 = self.upconv(X1)
         X1_dim = X1.size()[2]
         X2 = extract_img(X1_dim, X2)
         X1 = torch.cat((X1, X2), dim=1)
-        return self.conv2(X1)
+        X1 = self.conv2(X1)
+        return X1
 
 
 def extract_img(size, in_tensor):
@@ -79,16 +80,13 @@ class UNet_weak(nn.Module):
 
     def __init__(self, in_channels, out_channels, starting_filters=32, bn_momentum=0.1, padding=0):
         super(UNet_weak, self).__init__()
-        self.conv1 = DownConv(in_channels, starting_filters, bn_momentum, padding=padding)
-        self.conv2 = DownConv(starting_filters, starting_filters * 2, bn_momentum, padding=padding)
-        self.conv3 = DownConv(starting_filters * 2, starting_filters * 4, bn_momentum, padding=padding)
-
-        self.conv4 = ConvConv(starting_filters * 4, starting_filters * 8, bn_momentum, padding=padding)
-
-        self.upconv1 = UpconvConcat(starting_filters * 8, starting_filters * 4, bn_momentum, padding=padding)
-        self.upconv2 = UpconvConcat(starting_filters * 4, starting_filters * 2, bn_momentum, padding=padding)
-        self.upconv3 = UpconvConcat(starting_filters * 2, starting_filters, bn_momentum, padding=padding)
-
+        self.conv1 = DownConv(in_channels, starting_filters, bn_momentum)
+        self.conv2 = DownConv(starting_filters, starting_filters * 2, bn_momentum)
+        self.conv3 = DownConv(starting_filters * 2, starting_filters * 4, bn_momentum)
+        self.conv4 = ConvConv(starting_filters * 4, starting_filters * 8, bn_momentum)
+        self.upconv1 = UpconvConcat(starting_filters * 8, starting_filters * 4, bn_momentum)
+        self.upconv2 = UpconvConcat(starting_filters * 4, starting_filters * 2, bn_momentum)
+        self.upconv3 = UpconvConcat(starting_filters * 2, starting_filters, bn_momentum)
         self.conv_out = nn.Conv2d(starting_filters, out_channels, kernel_size=1)
 
     def forward(self, X):

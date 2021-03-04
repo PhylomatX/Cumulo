@@ -162,7 +162,7 @@ def extract_cloudy_labelled_tiles(swath_tuple, cloud_mask, label_mask, tile_size
 
 
 def sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=128, verbose=False, properties=None,
-                                   batch_size=None, center_distance=None):
+                                   batch_size=None, center_distance=None, offset=0):
     # sampling tiles from border region is not allowed
     allowed_pixels = get_sampling_mask((MAX_WIDTH, MAX_HEIGHT), tile_size)
     # get pixels along satellite track
@@ -206,7 +206,9 @@ def sample_random_tiles_from_track(radiances, cloud_mask, labels, tile_size=128,
             idcs = np.random.choice(np.arange(len(potential_pixels_idx)), batch_size, replace=False)
             potential_pixels_idx = potential_pixels_idx[idcs]
 
-    random_offsets = np.random.randint(-(tile_size // 2) + 1, (tile_size // 2) - 1, potential_pixels_idx.shape)
+    # random shifts for the tiles so that labeled pixels are always at different positions. offset makes sure that there are still
+    # labeled pixels within the output of the network in case it uses valid padding
+    random_offsets = np.random.randint(-(tile_size // 2) + 1 + offset, (tile_size // 2) - 1 - offset, potential_pixels_idx.shape)
     potential_pixels_idx += random_offsets
     offset, offset_2 = get_tile_offsets(tile_size)
     if properties is not None:
