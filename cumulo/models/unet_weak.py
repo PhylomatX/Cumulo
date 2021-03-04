@@ -61,8 +61,7 @@ class UpconvConcat(nn.Module):
         X1_dim = X1.size()[2]
         X2 = extract_img(X1_dim, X2)
         X1 = torch.cat((X1, X2), dim=1)
-        X1 = self.conv2(X1)
-        return X1
+        return self.conv2(X1)
 
 
 def extract_img(size, in_tensor):
@@ -83,10 +82,13 @@ class UNet_weak(nn.Module):
         self.conv1 = DownConv(in_channels, starting_filters, bn_momentum, padding=padding)
         self.conv2 = DownConv(starting_filters, starting_filters * 2, bn_momentum, padding=padding)
         self.conv3 = DownConv(starting_filters * 2, starting_filters * 4, bn_momentum, padding=padding)
+
         self.conv4 = ConvConv(starting_filters * 4, starting_filters * 8, bn_momentum, padding=padding)
+
         self.upconv1 = UpconvConcat(starting_filters * 8, starting_filters * 4, bn_momentum, padding=padding)
         self.upconv2 = UpconvConcat(starting_filters * 4, starting_filters * 2, bn_momentum, padding=padding)
         self.upconv3 = UpconvConcat(starting_filters * 2, starting_filters, bn_momentum, padding=padding)
+
         self.conv_out = nn.Conv2d(starting_filters, out_channels, kernel_size=1)
 
     def forward(self, X):

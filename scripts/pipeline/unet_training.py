@@ -214,7 +214,7 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                     if offset > 0:
                         labels = labels[:, offset:-offset, offset:-offset]
                         cloud_mask = cloud_mask[:, offset:-offset, offset:-offset]
-                    mask = labels >= 0  # get labeled pixels (independent from cloud mask)
+                    mask = labels >= 0 & cloud_mask == 1  # get labeled pixels in cloudy regions
                     loss = 0
                     for ix in range(mask.shape[0]):
                         bmask = mask[ix]
@@ -232,20 +232,21 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                         scheduler.step()
 
                 outputs = outputs.cpu().detach().numpy()
+                labels = labels.cpu().detach().numpy()
+                inputs = inputs.cpu().detach().numpy()
+                cloud_mask = cloud_mask.cpu().detach().numpy()
                 cloud_mask_pred = outputs[:, 0, ...]
                 cloud_mask_pred[cloud_mask_pred < 0.5] = 0
                 cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
                 cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
                 output = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
-                labels = labels.cpu().detach().numpy()
-                mask = mask.cpu().detach().numpy()
-                inputs = inputs.cpu().detach().numpy()
-                cloud_mask = cloud_mask.cpu().detach().numpy()
+                merged = include_cloud_mask(labels, cloud_mask)
+                mask = merged > 0
 
                 # statistics
                 running_loss += loss.item()
                 print(f"Epoch: {epoch} - Loss: {running_loss / (sample_ix + 1)}")
-                accuracy = float(np.sum(cloud_class_pred[mask] == labels[mask]) / cloud_class_pred[mask].shape)
+                accuracy = float(np.sum(output[mask] == merged[mask]) / output[mask].shape)  # use only labeled pixels in cloudy regions for accuracies
                 running_accuracy += accuracy
 
                 if phase == 'train' and epoch < 2:

@@ -42,6 +42,14 @@ def main(_):
     total_c_labels = np.array([])
     total_predictions = np.array([])
     total_c_predictions = np.array([])
+
+    if FLAGS.o_path is None:
+        o_path = FLAGS.path
+    else:
+        if not os.path.exists(FLAGS.o_path):
+            os.makedirs(FLAGS.o_path)
+        o_path = FLAGS.o_path
+
     for file in tqdm(files):
         data = np.load(file)
         labels = data['labels']  # Raw labels without cloud mask
@@ -77,6 +85,8 @@ def main(_):
             report += 'Cloud type eval:\n\n' + ct_cr_txt + '\n\n'
             cf_matrix = sm.confusion_matrix(labels, prediction)
             report += write_confusion_matrix(cf_matrix, get_target_names(labels, prediction, ct_targets)) + '\n\n\n\n'
+        with open(os.path.join(o_path, 'report.txt'), 'w') as f:
+            f.write(report)
     report += '#### TOTAL ####\n\n'
     cm_cr_txt = sm.classification_report(total_c_labels, total_c_predictions, labels=cm_targets)
     report += 'Cloud mask eval:\n\n' + cm_cr_txt + '\n\n'
@@ -86,13 +96,6 @@ def main(_):
     report += 'Cloud type eval:\n\n' + ct_cr_txt + '\n\n'
     cf_matrix = sm.confusion_matrix(total_labels, total_predictions)
     report += write_confusion_matrix(cf_matrix, get_target_names(total_labels, total_predictions, ct_targets))
-
-    if FLAGS.o_path is None:
-        o_path = FLAGS.path
-    else:
-        if not os.path.exists(FLAGS.o_path):
-            os.makedirs(FLAGS.o_path)
-        o_path = FLAGS.o_path
 
     with open(os.path.join(o_path, 'report.txt'), 'w') as f:
         f.write(report)
