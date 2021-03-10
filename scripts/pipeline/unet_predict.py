@@ -3,6 +3,7 @@ import torch
 import math
 import os
 import sys
+from tqdm import tqdm
 from cumulo.data.loader import CumuloDataset
 from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer, TileExtractor, include_cloud_mask
 from cumulo.models.unet_weak import UNet_weak
@@ -36,19 +37,21 @@ flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
 flags.DEFINE_integer('offset', 0, help='Cropping offset for labels in case of valid convolutions')
 flags.DEFINE_integer('padding', 0, help='Padding for convolutions')
 flags.DEFINE_float('augment_prob', 0, help='Augmentation probability')
+flags.DEFINE_bool('raw_predictions', False, help='Save network outputs for later visualization')
 FLAGS = flags.FLAGS
 # add arg of form --flagfile 'PATH_TO_FLAGFILE' at the beginning and add --o_path and --pred_num
 # python3 scripts/pipeline/unet_predict.py --flagfile ../Data/models/21_02_22_weak_newloss/flagfile.txt --o_path ../Data/models/21_02_22_weak_newloss/predictions --pred_num 50
 
 
+@torch.no_grad()
 def load_model(model_dir, use_cuda):
     model = None
     if FLAGS.model == 'weak':
-        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding)
         print("Using weak model!")
+        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding)
     elif FLAGS.model == 'equi':
-        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
         print("Using equi model!")
+        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
     if model is None:
         raise ValueError('Model type not known.')
 
@@ -64,11 +67,15 @@ def load_model(model_dir, use_cuda):
     return model
 
 
+@torch.no_grad()
 def predict_tiles(model, tiles, label_tiles, use_cuda, batch_size: int = 64):
     b_num = math.ceil(tiles.shape[0] / batch_size)
     ix = 0
     output_size = FLAGS.tile_size - 2 * FLAGS.offset
-    predictions = np.zeros((tiles.shape[0], output_size, output_size))
+    if FLAGS.raw_predictions:
+        predictions = np.zeros((tiles.shape[0], FLAGS.nb_classes, output_size, output_size))
+    else:
+        predictions = np.zeros((tiles.shape[0], output_size, output_size))
     targets = np.zeros((tiles.shape[0], output_size, output_size))
     remaining = 0
     for b in range(b_num):
@@ -90,12 +97,19 @@ def predict_tiles(model, tiles, label_tiles, use_cuda, batch_size: int = 64):
         if use_cuda:
             inputs = inputs.cuda()
         outputs = model(inputs)
-        outputs = outputs.cpu().detach().numpy()
-        cloud_mask_pred = outputs[:, 0, ...]
-        cloud_mask_pred[cloud_mask_pred < 0.5] = 0
-        cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
-        cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
-        outputs = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
+        outputs = outputs.cpu().detach()
+        if FLAGS.raw_predictions:
+            outputs[:, 1:, ...] = torch.softmax(outputs[:, 1:, ...], dim=1)
+            outputs[:, 0, ...][outputs[:, 0, ...] < 0.5] = 0
+            outputs[:, 0, ...][outputs[:, 0, ...] >= 0.5] = 1
+            outputs = outputs.numpy()
+        else:
+            outputs = outputs.numpy()
+            cloud_mask_pred = outputs[:, 0, ...]
+            cloud_mask_pred[cloud_mask_pred < 0.5] = 0
+            cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
+            cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
+            outputs = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
         label_batch = label_batch.squeeze()[:, FLAGS.offset:FLAGS.tile_size - FLAGS.offset, FLAGS.offset:FLAGS.tile_size - FLAGS.offset]
         if upper > tiles.shape[0]:
             predictions[ix:] = outputs[:remaining]
@@ -110,6 +124,9 @@ def predict_tiles(model, tiles, label_tiles, use_cuda, batch_size: int = 64):
 def main(_):
     m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
     s = np.load(os.path.join(FLAGS.d_path, "std.npy"))
+
+    if not os.path.exists(FLAGS.o_path):
+        os.makedirs(FLAGS.o_path)
 
     with open(os.path.join(FLAGS.o_path, 'eval_flagfile.txt'), 'w') as f:
         f.writelines(FLAGS.flags_into_string())
@@ -136,17 +153,21 @@ def main(_):
     use_cuda = torch.cuda.is_available()
     print("using GPUs?", use_cuda)
     model = load_model(FLAGS.m_path, use_cuda)
+    print(f"Batch size: {FLAGS.dataset_bs}")
 
-    if not os.path.exists(FLAGS.o_path):
-        os.makedirs(FLAGS.o_path)
-
-    for swath in dataset:
+    for swath in tqdm(dataset):
         filename, tiles, locations, label_tiles, cloud_mask, labels = swath
         predictions, targets = predict_tiles(model, tiles, label_tiles, use_cuda, batch_size=FLAGS.dataset_bs)
-        merged = np.ones(cloud_mask.squeeze().shape) * -1
+        if FLAGS.raw_predictions:
+            merged = np.ones((FLAGS.nb_classes, *cloud_mask.squeeze().shape))
+        else:
+            merged = np.ones(cloud_mask.squeeze().shape) * -1
         merged_target = np.ones(cloud_mask.squeeze().shape) * -1
         for ix, loc in enumerate(locations):
-            merged[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
+            if FLAGS.raw_predictions:
+                merged[:, loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
+            else:
+                merged[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
             merged_target[loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = targets[ix]
         np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')), locations=locations,
                  prediction=merged, target=merged_target, labels=labels.squeeze(), cloud_mask=cloud_mask.squeeze(), predictions=predictions)

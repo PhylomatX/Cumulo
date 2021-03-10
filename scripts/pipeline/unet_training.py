@@ -156,6 +156,7 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
     t0 = time.time()
 
     best_acc = 0.0
+    best_acc_cloudy = 0.0
     best_loss = None
     offset = FLAGS.offset
 
@@ -163,7 +164,8 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
         f.writelines(FLAGS.flags_into_string())
 
     training_info = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
-                     'train_running_accuracy': [], 'running_lr': []}
+                     'train_running_accuracy': [], 'running_lr': [], 'train_acc_cloudy': [],
+                     'val_acc_cloudy': []}
 
     for epoch in range(num_epochs):
         dataloaders = {}
@@ -191,6 +193,7 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
 
             running_loss = 0.0
             running_accuracy = 0
+            running_accuracy_cloudy = 0
 
             # Iterate over data.
             for sample_ix, sample in enumerate(tqdm(dataloaders[phase])):
@@ -239,18 +242,26 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
                 cloud_mask_pred[cloud_mask_pred < 0.5] = 0
                 cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
                 cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
-                output = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
+                output = cloud_class_pred * cloud_mask
+                mask = labels >= 0
                 merged = include_cloud_mask(labels, cloud_mask)
-                mask = merged > 0
+                cloudy = merged > 0
 
                 # statistics
                 running_loss += loss.item()
-                print(f"Epoch: {epoch} - Loss: {running_loss / (sample_ix + 1)}")
-                accuracy = float(np.sum(output[mask] == merged[mask]) / output[mask].shape)  # use only labeled pixels in cloudy regions for accuracies
-                running_accuracy += accuracy
+                accuracy_cloud_mask = float(np.sum(cloud_mask_pred.reshape(-1) == cloud_mask.reshape(-1)) / cloud_mask.reshape(-1).shape[0])
+                accuracy_cloud_class = float(np.sum(cloud_class_pred[mask] == labels[mask]) / labels[mask].shape[0])
+                accuracy_cloudy = float(np.sum(output[cloudy] == merged[cloudy]) / merged[cloudy].shape[0])
+                print(f"Epoch: {epoch} - Loss: {running_loss / (sample_ix + 1)} "
+                      f"- Accuracy_cloud_class: {accuracy_cloud_class} "
+                      f"- Accuracy_cloudy: {accuracy_cloudy} "
+                      f"- Accuracy_cloud_mask: {accuracy_cloud_mask}")
+                accuracy_weighted = (accuracy_cloud_mask + 2 * accuracy_cloud_class) / 3
+                running_accuracy += accuracy_weighted
+                running_accuracy_cloudy += accuracy_cloudy
 
                 if phase == 'train' and epoch < 2:
-                    training_info[phase + '_running_accuracy'].append(accuracy)
+                    training_info[phase + '_running_accuracy'].append(accuracy_weighted)
                     training_info['running_lr'].append(scheduler.get_lr())
                 with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
                     pkl.dump(training_info, f)
@@ -266,20 +277,26 @@ def train(model, m_path, datasets, criterion1, criterion2, optimizer, scheduler,
 
             epoch_loss = running_loss / len(datasets[phase])
             epoch_acc = running_accuracy / len(datasets[phase])
+            epoch_acc_cloudy = running_accuracy_cloudy / len(datasets[phase])
 
             if best_loss is None:
                 best_loss = epoch_loss
 
             training_info[phase + '_loss'].append(epoch_loss)
             training_info[phase + '_acc'].append(float(epoch_acc))
+            training_info[phase + '_acc_cloudy'].append(float(epoch_acc_cloudy))
 
-            print('{} loss: {:.4f}, single pixel accuracy: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+            print('{} loss: {:.4f}, single pixel accuracy: {:.4f}'.format(phase, epoch_loss, epoch_acc, epoch_acc_cloudy))
 
             # save models
             if phase == 'val' and best_acc < epoch_acc:
                 best_acc = epoch_acc
-                torch.save(model.state_dict(), os.path.join(m_path, f'val_best'))
-                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_backup'))
+                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_weighted'))
+                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_weighted_backup'))
+            if phase == 'val' and best_acc_cloudy < epoch_acc_cloudy:
+                best_acc_cloudy = epoch_acc_cloudy
+                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_cloudy'))
+                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_cloudy_backup'))
             elif phase == 'train' and epoch_loss < best_loss:
                 best_loss = epoch_loss
                 model.eval()
