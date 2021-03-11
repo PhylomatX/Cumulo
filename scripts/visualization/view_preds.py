@@ -8,6 +8,7 @@ from cumulo.utils.utils import include_cloud_mask
 flags.DEFINE_string('path', None, help='Location of predictions')
 flags.DEFINE_boolean('save', False, help='Save predictions as images')
 flags.DEFINE_boolean('continuous', True, help='Use predictions for color weighting')
+flags.DEFINE_boolean('binary_mask', True, help='Make cloud mask binary')
 flags.DEFINE_integer('offset', 46, help='Offset of predictions to border to exclude in view')
 FLAGS = flags.FLAGS
 
@@ -34,14 +35,26 @@ def main(_):
         prediction = data['prediction']
         if prediction.ndim == 3:
             if FLAGS.continuous:
-                masked = prediction[1:, ...] * prediction[0]
-                masked = masked.transpose()
-                prediction = np.matmul(masked, colors ** 2)
-                prediction = np.swapaxes(prediction, 0, 1)
+                clouds = np.matmul(prediction[1:, ...].transpose(), colors ** 2)
+                clouds = np.swapaxes(clouds, 0, 1)
+                if FLAGS.binary_mask:
+                    prediction[0][prediction[0] < 0.5] = 0
+                    prediction[0][prediction[0] >= 0.5] = 1
+                cloud_mask_pred = np.expand_dims(prediction[0], -1)
+                prediction = clouds * cloud_mask_pred + (1 - cloud_mask_pred) * no_cloud ** 2
                 prediction = np.sqrt(prediction)
                 prediction[np.all(prediction == 0, 2)] = no_cloud
+            else:
+                prediction[0][prediction[0] < 0.5] = 0
+                prediction[0][prediction[0] >= 0.5] = 1
+                flat = np.argmax(prediction[1:, ...], 0)
+                prediction = include_cloud_mask(flat, prediction[0]).astype(np.int)
+                colors_merged = np.vstack([no_cloud, colors])
+                prediction = colors_merged[prediction.reshape(-1)].reshape(*prediction.shape, 3)
         else:
             prediction = np.expand_dims(prediction, -1)
+            colors_merged = np.vstack([no_cloud, colors])
+            prediction = colors_merged[prediction.reshape(-1)].reshape(*prediction.shape, 3)
         prediction = prediction[FLAGS.offset:-1 - FLAGS.offset, FLAGS.offset:-1 - FLAGS.offset, :]
         labels = data['labels'][FLAGS.offset:-1 - FLAGS.offset, FLAGS.offset:-1 - FLAGS.offset]
         cloud_mask = data['cloud_mask'][FLAGS.offset:-1 - FLAGS.offset, FLAGS.offset:-1 - FLAGS.offset]
@@ -50,14 +63,18 @@ def main(_):
         flat_labels = labels.reshape(-1)
         labels = colors_merged[flat_labels].reshape(*labels.shape, 3)
         if not FLAGS.save:
-            fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+            if FLAGS.binary_mask:
+                fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+            else:
+                fig, axs = plt.subplots(1, 2, figsize=(15, 5))
             axs[0].set_title('Predicted cloud classes')
             axs[0].imshow(prediction)
             axs[1].set_title('Ground Truth')
             axs[1].imshow(labels)
-            prediction[np.any(prediction != no_cloud[0], 2)] = no_label
-            axs[2].set_title('Predicted cloud mask')
-            axs[2].imshow(prediction)
+            if FLAGS.binary_mask:
+                prediction[np.any(prediction != no_cloud[0], 2)] = no_label
+                axs[2].set_title('Predicted cloud mask')
+                axs[2].imshow(prediction)
             plt.show()
             plt.close()
         else:
@@ -74,13 +91,14 @@ def main(_):
             plt.tight_layout()
             plt.savefig(os.path.join(FLAGS.path, file.replace('.npz', '_gt.png')))
             plt.close()
-            fig, axs = plt.subplots(1, 1, figsize=figsize)
-            prediction[np.any(prediction != no_cloud[0], 2)] = no_label
-            plt.title('Predicted cloud mask')
-            plt.imshow(prediction)
-            plt.tight_layout()
-            plt.savefig(os.path.join(FLAGS.path, file.replace('.npz', '_cloudmaskpred.png')))
-            plt.close()
+            if FLAGS.binary_mask:
+                fig, axs = plt.subplots(1, 1, figsize=figsize)
+                prediction[np.any(prediction != no_cloud[0], 2)] = no_label
+                plt.title('Predicted cloud mask')
+                plt.imshow(prediction)
+                plt.tight_layout()
+                plt.savefig(os.path.join(FLAGS.path, file.replace('.npz', '_cloudmaskpred.png')))
+                plt.close()
 
 
 if __name__ == '__main__':
