@@ -100,8 +100,7 @@ def predict_tiles(model, tiles, label_tiles, use_cuda, batch_size: int = 64):
         outputs = outputs.cpu().detach()
         if FLAGS.raw_predictions:
             outputs[:, 1:, ...] = torch.softmax(outputs[:, 1:, ...], dim=1)
-            outputs[:, 0, ...][outputs[:, 0, ...] < 0.5] = 0
-            outputs[:, 0, ...][outputs[:, 0, ...] >= 0.5] = 1
+            outputs[:, 0, ...] = torch.softmax(outputs[:, 0, ...], dim=1)
             outputs = outputs.numpy()
         else:
             outputs = outputs.numpy()

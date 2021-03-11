@@ -7,6 +7,7 @@ from cumulo.utils.utils import include_cloud_mask
 
 flags.DEFINE_string('path', None, help='Location of predictions')
 flags.DEFINE_boolean('save', False, help='Save predictions as images')
+flags.DEFINE_boolean('continuous', True, help='Use predictions for color weighting')
 flags.DEFINE_integer('offset', 46, help='Offset of predictions to border to exclude in view')
 FLAGS = flags.FLAGS
 
@@ -32,12 +33,13 @@ def main(_):
         data = np.load(os.path.join(FLAGS.path, file))
         prediction = data['prediction']
         if prediction.ndim == 3:
-            masked = prediction[1:, ...] * prediction[0]
-            masked = masked.transpose()
-            prediction = np.matmul(masked, colors ** 2)
-            prediction = np.swapaxes(prediction, 0, 1)
-            prediction = np.sqrt(prediction)
-            prediction[np.all(prediction == 0, 2)] = no_cloud
+            if FLAGS.continuous:
+                masked = prediction[1:, ...] * prediction[0]
+                masked = masked.transpose()
+                prediction = np.matmul(masked, colors ** 2)
+                prediction = np.swapaxes(prediction, 0, 1)
+                prediction = np.sqrt(prediction)
+                prediction[np.all(prediction == 0, 2)] = no_cloud
         else:
             prediction = np.expand_dims(prediction, -1)
         prediction = prediction[FLAGS.offset:-1 - FLAGS.offset, FLAGS.offset:-1 - FLAGS.offset, :]
