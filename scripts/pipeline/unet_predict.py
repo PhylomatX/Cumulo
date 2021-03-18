@@ -28,6 +28,7 @@ flags.DEFINE_integer('tile_size', 128, help='Tile size.')
 flags.DEFINE_integer('center_distance', None, help='Distance between base points of tile extraction.')
 flags.DEFINE_bool('val', False, help='Flag for validation after each epoch.')
 flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
+flags.DEFINE_string('norm', 'bn', help='Type of normalization, one of [bn, gn, none]')
 flags.DEFINE_bool('merged', False, help='Flag for indicating use of merged dataset')
 flags.DEFINE_bool('examples', False, help='Save some training examples in each epoch')
 flags.DEFINE_bool('local_norm', True, help='Standardize each image channel-wise. If False the statistics of a data subset will be used.')
@@ -37,7 +38,7 @@ flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
 flags.DEFINE_integer('offset', 0, help='Cropping offset for labels in case of valid convolutions')
 flags.DEFINE_integer('padding', 0, help='Padding for convolutions')
 flags.DEFINE_float('augment_prob', 0, help='Augmentation probability')
-flags.DEFINE_bool('raw_predictions', False, help='Save network outputs for later visualization')
+flags.DEFINE_bool('raw_predictions', True, help='Save network outputs for later visualization')
 FLAGS = flags.FLAGS
 
 # add arg of form --flagfile 'PATH_TO_FLAGFILE' at the beginning and add --o_path and --pred_num
@@ -86,7 +87,7 @@ def predict_tiles(model, tiles, device, batch_size):
 
         # --- postprocessing ---
         if FLAGS.raw_predictions:
-            outputs[:, 1:, ...] = torch.softmax(outputs[:, 1:, ...], dim=1)  # last 8 channels are trained with SoftMax and CrossEntropy
+            outputs[:, 1:, ...] = torch.softmax(outputs[:, 1:, ...], dim=1)  # last 8 channels are trained with LogSoftMax and CrossEntropy
             outputs[:, 0, ...] = torch.sigmoid(outputs[:, 0, ...])  # first channel is trained with Sigmoid and BinaryCrossEntropy
             outputs = outputs.numpy()
         else:
