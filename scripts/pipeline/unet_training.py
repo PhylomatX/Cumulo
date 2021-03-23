@@ -74,8 +74,8 @@ def main(_):
     std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
     custom_class_weights = np.ones_like(class_weights)
-    custom_class_weights[3] *= 2
-    # custom_class_weights[4] /= 10
+    custom_class_weights[3] *= 10
+    custom_class_weights[4] /= 10
     class_weights *= custom_class_weights
 
     if FLAGS.local_norm:
@@ -244,7 +244,7 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
                         bmask = bmask.unsqueeze(0).expand_as(outputs[ix][1:9])
                         bouts = outputs[ix][1:9][bmask].reshape(8, -1).transpose(0, 1)
                         mask_loss = FLAGS.mask_weight * mask_loss_fn(outputs[ix][0], cmask)  # BCEWithLogitsLoss for cloud mask
-                        class_loss = FLAGS.class_weight * class_loss_fn(bouts, blabels.long()).long()  # CrossEntropy for labels
+                        class_loss = FLAGS.class_weight * class_loss_fn(bouts, blabels.long())  # CrossEntropy for labels
                         auto_loss = 0
                         auto_weight = 0
                         if FLAGS.nb_classes > 9:
@@ -319,17 +319,14 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
             if phase == 'val' and best_acc_cloudy < epoch_acc_cloudy:
                 best_acc_cloudy = epoch_acc_cloudy
                 torch.save(model.state_dict(), os.path.join(m_path, f'val_best_cloudy'))
-                # torch.save(model.state_dict(), os.path.join(m_path, f'val_best_cloudy_backup'))
             elif phase == 'train' and epoch_loss < best_loss:
                 best_loss = epoch_loss
                 model.eval()
                 torch.save(model.state_dict(), os.path.join(m_path, f'train_best'))
-                # torch.save(model.state_dict(), os.path.join(m_path, f'train_best_backup'))
                 model.train()
             if phase == 'train':
                 model.eval()
                 torch.save(model.state_dict(), os.path.join(m_path, f'last_model'))
-                # torch.save(model.state_dict(), os.path.join(m_path, f'last_model_backup'))
                 model.train()
 
         with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
