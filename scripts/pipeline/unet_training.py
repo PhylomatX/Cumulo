@@ -74,8 +74,8 @@ def main(_):
     std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
     custom_class_weights = np.ones_like(class_weights)
-    custom_class_weights[3] *= 10
-    custom_class_weights[4] /= 10
+    custom_class_weights[3] *= 2
+    # custom_class_weights[4] /= 10
     class_weights *= custom_class_weights
 
     if FLAGS.local_norm:
@@ -120,7 +120,9 @@ def main(_):
     if FLAGS.model == 'weak':
         model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
-        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
+        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
+    else:
+        raise NotImplementedError()
     print('Model initialized!')
     model = model.to(device)
 
@@ -133,12 +135,21 @@ def main(_):
     #     grp['lr'] = 1e-7
     # lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
 
-    lr_sched = torch.optim.lr_scheduler.CyclicLR(
-        optimizer,
-        base_lr=1e-6,  # 1e-6 for weak, 1.2e-5 for equi
-        max_lr=1e-4,  # 1e-4 for weak, 2e-4 for equi
-        cycle_momentum=True if 'momentum' in optimizer.defaults else False
-    )
+    # base_lr and max_lr were found with the experimental procedure from the CyclicLR paper
+    if FLAGS.model == 'weak':
+        lr_sched = torch.optim.lr_scheduler.CyclicLR(
+            optimizer,
+            base_lr=1e-6,
+            max_lr=1e-4,
+            cycle_momentum=True if 'momentum' in optimizer.defaults else False
+        )
+    elif FLAGS.model == 'equi':
+        lr_sched = torch.optim.lr_scheduler.CyclicLR(
+            optimizer,
+            base_lr=1.2e-5,
+            max_lr=2e-4,
+            cycle_momentum=True if 'momentum' in optimizer.defaults else False
+        )
 
     mask_loss = nn.BCEWithLogitsLoss()
     class_loss = nn.CrossEntropyLoss(weight=class_weights.to(device))
@@ -235,9 +246,11 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
                         mask_loss = FLAGS.mask_weight * mask_loss_fn(outputs[ix][0], cmask)  # BCEWithLogitsLoss for cloud mask
                         class_loss = FLAGS.class_weight * class_loss_fn(bouts, blabels.long()).long()  # CrossEntropy for labels
                         auto_loss = 0
+                        auto_weight = 0
                         if FLAGS.nb_classes > 9:
                             auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][9:].float(), inputs[ix][:(FLAGS.nb_classes - 9)].float())  # MSE for autoencoder loss
-                        loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + FLAGS.auto_weight)
+                            auto_weight = FLAGS.auto_weight
+                        loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + auto_weight)
                     loss /= mask.shape[0]
 
                     # backward + optimize only if in training phase
@@ -270,11 +283,11 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
                 # statistics
                 running_loss += loss.item()
                 mask_accuracy = float(np.sum(cloud_mask_pred.reshape(-1) == cloud_mask.reshape(-1)) / cloud_mask.reshape(-1).shape[0])
-                class_accuracy = float(np.sum(cloud_class_pred[mask] - 1 == labels[mask]) / labels[mask].shape[0])
+                class_accuracy = float(np.sum(cloud_class_pred[mask] == labels[mask]) / labels[mask].shape[0])
                 cloudy_class_accuracy = float(np.sum(output[cloudy] == merged[cloudy]) / merged[cloudy].shape[0])
                 print(f"Epoch: {epoch} - Loss: {round(running_loss / (sample_ix + 1), 3)} "
                       f"- Class accuracy: {round(class_accuracy, 3)} "
-                      f"- Mask accuracy: {round(mask_accuracy, 3)}")
+                      f"- Mask accuracy: {round(mask_accuracy, 3)} - {FLAGS.m_path}")
                 accuracy_weighted = (mask_accuracy + 2 * class_accuracy) / 3
                 running_accuracy += accuracy_weighted
                 running_accuracy_cloudy += cloudy_class_accuracy
@@ -306,17 +319,17 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
             if phase == 'val' and best_acc_cloudy < epoch_acc_cloudy:
                 best_acc_cloudy = epoch_acc_cloudy
                 torch.save(model.state_dict(), os.path.join(m_path, f'val_best_cloudy'))
-                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_cloudy_backup'))
+                # torch.save(model.state_dict(), os.path.join(m_path, f'val_best_cloudy_backup'))
             elif phase == 'train' and epoch_loss < best_loss:
                 best_loss = epoch_loss
                 model.eval()
                 torch.save(model.state_dict(), os.path.join(m_path, f'train_best'))
-                torch.save(model.state_dict(), os.path.join(m_path, f'train_best_backup'))
+                # torch.save(model.state_dict(), os.path.join(m_path, f'train_best_backup'))
                 model.train()
             if phase == 'train':
                 model.eval()
                 torch.save(model.state_dict(), os.path.join(m_path, f'last_model'))
-                torch.save(model.state_dict(), os.path.join(m_path, f'last_model_backup'))
+                # torch.save(model.state_dict(), os.path.join(m_path, f'last_model_backup'))
                 model.train()
 
         with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
