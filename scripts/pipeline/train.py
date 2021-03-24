@@ -1,5 +1,4 @@
 import os
-import time
 import torch
 import random
 import glob
@@ -8,7 +7,6 @@ from tqdm import tqdm
 import numpy as np
 from absl import app
 import torch.nn as nn
-from absl import flags
 import torch.optim as optim
 import faulthandler
 import shutil
@@ -16,39 +14,11 @@ from cumulo import __file__ as arch_src
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
-from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer, include_cloud_mask
-
-flags.DEFINE_string('d_path', None, help='Data path')
-flags.DEFINE_string('m_path', None, help='Model path')
-flags.DEFINE_string('filetype', 'nc', help='File type for dataset')
-flags.DEFINE_integer('r_seed', 1, help='Random seed')
-flags.DEFINE_integer('nb_epochs', 200, help='Number of epochs')
-flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloader.')
-flags.DEFINE_integer('bs', 1, help='Batch size for training and validation.')
-flags.DEFINE_integer('dataset_bs', 16, help='Batch size for training and validation.')
-flags.DEFINE_integer('tile_num', None, help='Tile number / data set size.')
-flags.DEFINE_integer('tile_size', 256, help='Tile size.')
-flags.DEFINE_integer('nb_classes', 9, help='Number of classes.')
-flags.DEFINE_integer('center_distance', None, help='Distance between base points of tile extraction.')
-flags.DEFINE_bool('val', True, help='Flag for validation after each epoch.')
-flags.DEFINE_string('model', 'weak', help='Option for choosing between UNets.')
-flags.DEFINE_string('norm', 'none', help='Type of normalization, one of [bn, gn, none]')
-flags.DEFINE_bool('merged', True, help='Flag for indicating use of merged dataset')
-flags.DEFINE_bool('examples', True, help='Save some training examples in each epoch')
-flags.DEFINE_bool('local_norm', False, help='Standardize each image channel-wise. If False the statistics of a data subset will be used.')
-flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequency')
-flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
-flags.DEFINE_integer('offset', 46, help='Cropping offset for labels in case of valid convolutions')
-flags.DEFINE_integer('padding', 0, help='Padding for convolutions')
-flags.DEFINE_integer('class_weight', 2, help='Weight of class loss')
-flags.DEFINE_integer('mask_weight', 1, help='Weight of mask loss')
-flags.DEFINE_integer('auto_weight', 1, help='Weight of auto loss')
-flags.DEFINE_float('augment_prob', 0.5, help='Augmentation probability')
-FLAGS = flags.FLAGS
+from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer
+from flags import FLAGS
 
 
 def main(_):
-    # Initialize parameters and prepare data
     nb_epochs = FLAGS.nb_epochs
     lr = 1e-3
     weight_decay = 0.5e-4
@@ -103,20 +73,20 @@ def main(_):
         np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), test_idx)
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
-                                  tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
-                                  augment_prob=FLAGS.augment_prob, offset=FLAGS.offset)
+                                  tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
+                                  valid_convolution_offset=FLAGS.valid_convolution_offset)
 
     if FLAGS.val:
         print("Training with validation!")
         val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
-                                    tile_size=FLAGS.tile_size, center_distance=FLAGS.center_distance, ext=FLAGS.filetype,
-                                    augment_prob=FLAGS.augment_prob, offset=FLAGS.offset)
+                                    tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
+                                    valid_convolution_offset=FLAGS.valid_convolution_offset)
         datasets = {'train': train_dataset, 'val': val_dataset}
     else:
         print("Training without validation!")
         datasets = {'train': train_dataset}
 
-    # Prepare model
+    # --- prepare model ---
     if FLAGS.model == 'weak':
         model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
@@ -135,7 +105,7 @@ def main(_):
     #     grp['lr'] = 1e-7
     # lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
 
-    # base_lr and max_lr were found with the experimental procedure from the CyclicLR paper
+    # base_lr and max_lr were found with the experimental procedure from the CyclicLR paper (see above)
     if FLAGS.model == 'weak':
         lr_sched = torch.optim.lr_scheduler.CyclicLR(
             optimizer,
@@ -167,22 +137,14 @@ def main(_):
 
 
 def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, optimizer, scheduler, num_epochs=1000, device='cuda'):
-    """
-    Trains a model for all epochs using the provided dataloader.
-    """
-    t0 = time.time()
-
     best_acc = 0.0
-    best_acc_cloudy = 0.0
     best_loss = None
-    offset = FLAGS.offset
+    offset = FLAGS.valid_convolution_offset
 
     with open(os.path.join(FLAGS.m_path, 'flagfile.txt'), 'w') as f:
         f.writelines(FLAGS.flags_into_string())
 
-    training_info = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
-                     'train_running_accuracy': [], 'running_lr': [], 'train_acc_cloudy': [],
-                     'val_acc_cloudy': []}
+    metrics = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
 
     for epoch in range(num_epochs):
         dataloaders = {}
@@ -190,152 +152,121 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
             dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.bs,
                                                              num_workers=FLAGS.num_workers)
 
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        print('-' * 10)
-
         torch.manual_seed(epoch)
         torch.cuda.manual_seed(epoch)
         np.random.seed(epoch)
         random.seed(epoch)
         torch.backends.cudnn.deterministic = True
 
-        # Each epoch has a training and validation phase
         for phase in dataloaders:
             if phase == 'train':
-                model.train()  # Set model to training mode
+                model.train()
             else:
                 if epoch % FLAGS.analysis_freq != 0:
                     continue
-                model.eval()  # Set model to evaluate mode
+                model.eval()
 
             running_loss = 0.0
-            running_accuracy = 0
-            running_accuracy_cloudy = 0
+            running_accuracy = 0.0
 
-            # Iterate over data.
             for sample_ix, sample in enumerate(tqdm(dataloaders[phase])):
-                inputs, labels, cloud_mask = sample
+                radiances, labels, cloud_mask = sample
 
+                # --- unpack PyTorch batching if dataloader delivers batches already
                 if FLAGS.merged:
-                    inputs = inputs.reshape(-1, *tuple(inputs.shape[2:]))
-                    labels = labels.reshape(-1, *tuple(inputs.shape[2:]))
-                    cloud_mask = cloud_mask.reshape(-1, *tuple(inputs.shape[2:]))
+                    radiances = radiances.reshape(-1, *tuple(radiances.shape[2:]))
+                    labels = labels.reshape(-1, *tuple(radiances.shape[2:]))
+                    cloud_mask = cloud_mask.reshape(-1, *tuple(radiances.shape[2:]))
 
-                inputs = inputs.to(device)
+                radiances = radiances.to(device)
                 labels = labels.to(device)
                 cloud_mask = cloud_mask.to(device)
 
-                # zero the parameter gradients
                 optimizer.zero_grad()
-
-                # forward
                 with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs.type(torch.float32))
+                    outputs = model(radiances.type(torch.float32))
                     if offset > 0:
                         labels = labels[:, offset:-offset, offset:-offset]
                         cloud_mask = cloud_mask[:, offset:-offset, offset:-offset]
-                        inputs = inputs[..., offset:-offset, offset:-offset]
-                    mask = labels >= 0  # get labeled pixels (this includes labels in non-cloudy regions as well!)
+                        radiances = radiances[..., offset:-offset, offset:-offset]
+                    labeled_mask = labels >= 0  # get labeled pixels (this includes labels in non-cloudy regions as well!)
                     loss = 0
-                    for ix in range(mask.shape[0]):
-                        bmask = mask[ix]
-                        blabels = labels[ix][bmask]
-                        cmask = cloud_mask[ix]
-                        bmask = bmask.unsqueeze(0).expand_as(outputs[ix][1:9])
-                        bouts = outputs[ix][1:9][bmask].reshape(8, -1).transpose(0, 1)
-                        mask_loss = FLAGS.mask_weight * mask_loss_fn(outputs[ix][0], cmask)  # BCEWithLogitsLoss for cloud mask
-                        class_loss = FLAGS.class_weight * class_loss_fn(bouts, blabels.long())  # CrossEntropy for labels
-                        auto_loss = 0
-                        auto_weight = 0
+                    for ix in range(labeled_mask.shape[0]):
+                        b_labeled_mask = labeled_mask[ix]
+                        b_labels = labels[ix][b_labeled_mask]
+                        b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][1:9])
+                        b_cloud_mask = cloud_mask[ix]
+                        b_outputs = outputs[ix][1:9][b_labeled_mask].reshape(8, -1).transpose(0, 1)
+
+                        mask_loss = FLAGS.mask_weight * mask_loss_fn(outputs[ix][0], b_cloud_mask.float())  # BCEWithLogitsLoss for cloud mask
+                        class_loss = FLAGS.class_weight * class_loss_fn(b_outputs, b_labels.long())  # CrossEntropy for labels
+                        auto_loss, auto_weight = 0, 0
                         if FLAGS.nb_classes > 9:
-                            auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][9:].float(), inputs[ix][:(FLAGS.nb_classes - 9)].float())  # MSE for autoencoder loss
+                            auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][9:].float(), radiances[ix][:(FLAGS.nb_classes - 9)].float())  # MSE for autoencoder loss
                             auto_weight = FLAGS.auto_weight
                         loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + auto_weight)
-                    loss /= mask.shape[0]
+                    loss /= labeled_mask.shape[0]
 
-                    # backward + optimize only if in training phase
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
                         scheduler.step()
 
-                outputs[:, 0, ...] = torch.sigmoid(outputs[:, 0, ...])
                 outputs = outputs.cpu().detach().numpy()
                 labels = labels.cpu().detach().numpy()
                 cloud_mask = cloud_mask.cpu().detach().numpy()
 
-                # save training examples
+                # --- save training examples ---
                 if FLAGS.examples and epoch % FLAGS.analysis_freq == 0:
                     if sample_ix == 0:
                         np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'),
                                  labels=labels[:1], outputs=outputs[:1, ...],
                                  cloud_mask=cloud_mask[:1])
 
-                cloud_mask_pred = outputs[:, 0, ...]
-                cloud_mask_pred[cloud_mask_pred < 0.5] = 0
-                cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
-                cloud_class_pred = np.argmax(outputs[:, 1:9, ...], axis=1)
-                output = cloud_class_pred * cloud_mask
-                mask = labels >= 0
-                merged = include_cloud_mask(labels, cloud_mask)
-                cloudy = merged > 0
+                mask_prediction = outputs[:, 0, ...]
+                mask_prediction[mask_prediction < 0.5] = 0
+                mask_prediction[mask_prediction >= 0.5] = 1
+                class_prediction = np.argmax(outputs[:, 1:9, ...], axis=1)
+                labeled_mask = labels != -1
 
                 # statistics
-                running_loss += loss.item()
-                mask_accuracy = float(np.sum(cloud_mask_pred.reshape(-1) == cloud_mask.reshape(-1)) / cloud_mask.reshape(-1).shape[0])
-                class_accuracy = float(np.sum(cloud_class_pred[mask] == labels[mask]) / labels[mask].shape[0])
-                cloudy_class_accuracy = float(np.sum(output[cloudy] == merged[cloudy]) / merged[cloudy].shape[0])
-                print(f"Epoch: {epoch} - Loss: {round(running_loss / (sample_ix + 1), 3)} "
+                running_loss += loss
+                mask_accuracy = float(np.sum(mask_prediction.reshape(-1) == cloud_mask.reshape(-1)) / cloud_mask.reshape(-1).shape[0])
+                class_accuracy = float(np.sum(class_prediction[labeled_mask] == labels[labeled_mask]) / labels[labeled_mask].shape[0])
+                accuracy = (mask_accuracy + 2 * class_accuracy) / 3
+                running_accuracy += accuracy
+
+                print(f"Epoch: {epoch} "
+                      f"- Loss: {round(running_loss / (sample_ix + 1), 3)} "
                       f"- Class accuracy: {round(class_accuracy, 3)} "
                       f"- Mask accuracy: {round(mask_accuracy, 3)} - {FLAGS.m_path}")
-                accuracy_weighted = (mask_accuracy + 2 * class_accuracy) / 3
-                running_accuracy += accuracy_weighted
-                running_accuracy_cloudy += cloudy_class_accuracy
 
-                if phase == 'train' and epoch < 2:
-                    training_info[phase + '_running_accuracy'].append(accuracy_weighted)
-                    training_info['running_lr'].append(scheduler.get_lr())
                 with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
-                    pkl.dump(training_info, f)
+                    pkl.dump(metrics, f)
 
             epoch_loss = running_loss / len(datasets[phase])
             epoch_acc = running_accuracy / len(datasets[phase])
-            epoch_acc_cloudy = running_accuracy_cloudy / len(datasets[phase])
+            metrics[phase + '_loss'].append(epoch_loss)
+            metrics[phase + '_acc'].append(float(epoch_acc))
 
+            # --- save models ---
             if best_loss is None:
                 best_loss = epoch_loss
-
-            training_info[phase + '_loss'].append(epoch_loss)
-            training_info[phase + '_acc'].append(float(epoch_acc))
-            training_info[phase + '_acc_cloudy'].append(float(epoch_acc_cloudy))
-
-            print('{} loss: {:.4f}, single pixel accuracy: {:.4f}'.format(phase, epoch_loss, epoch_acc, epoch_acc_cloudy))
-
-            # save models
             if phase == 'val' and best_acc < epoch_acc:
                 best_acc = epoch_acc
-                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_weighted'))
-                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_weighted_backup'))
-            if phase == 'val' and best_acc_cloudy < epoch_acc_cloudy:
-                best_acc_cloudy = epoch_acc_cloudy
-                torch.save(model.state_dict(), os.path.join(m_path, f'val_best_cloudy'))
-            elif phase == 'train' and epoch_loss < best_loss:
+                torch.save(model.state_dict(), os.path.join(m_path, f'val_best'))
+            if phase == 'train' and epoch_loss < best_loss:
                 best_loss = epoch_loss
-                model.eval()
+                model.eval()  # required by e2cnn
                 torch.save(model.state_dict(), os.path.join(m_path, f'train_best'))
                 model.train()
             if phase == 'train':
-                model.eval()
+                model.eval()  # required by e2cnn
                 torch.save(model.state_dict(), os.path.join(m_path, f'last_model'))
                 model.train()
 
         with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
-            pkl.dump(training_info, f)
-
-    time_elapsed = time.time() - t0
-    print('Training complete in {:.0f}m {:.0f}s'.format(
-        time_elapsed // 60, time_elapsed % 60))
-    print('Best val single pixel accuracy: {:4f}'.format(best_acc))
+            pkl.dump(metrics, f)
 
 
 if __name__ == '__main__':

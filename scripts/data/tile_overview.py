@@ -10,7 +10,7 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    dataset = CumuloDataset(FLAGS.load_path, ext="npz", label_preproc=None)
+    dataset = CumuloDataset(FLAGS.load_path)
 
     for instance in dataset:
         filename, radiances, properties, rois, labels = instance

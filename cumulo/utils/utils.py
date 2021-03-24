@@ -1,49 +1,30 @@
+from tqdm import tqdm
 import netCDF4 as nc4
 import numpy as np
-import os
-from tqdm import tqdm
-import torch
-from torch.utils.data import DataLoader, SubsetRandomSampler
 
-from cumulo.data.loader import read_npz
+radiances_nc = ['ev_250_aggr1km_refsb_1', 'ev_250_aggr1km_refsb_2', 'ev_1km_emissive_29', 'ev_1km_emissive_33',
+                'ev_1km_emissive_34', 'ev_1km_emissive_35', 'ev_1km_emissive_36', 'ev_1km_refsb_26',
+                'ev_1km_emissive_27', 'ev_1km_emissive_20', 'ev_1km_emissive_21', 'ev_1km_emissive_22', 'ev_1km_emissive_23']
+cloud_mask_nc = 'cloud_mask'
+labels_nc = 'cloud_layer_type'
 
-import datetime
-
-
-def get_datetime(year, day, hour=0, minute=0, second=0):
-    """ Returns month and day given a day of a year"""
-
-    dt = datetime.datetime(year, 1, 1, hour, minute, second) + datetime.timedelta(days=day - 1)
-    return dt
+MAX_WIDTH, MAX_HEIGHT = 1354, 2030
 
 
-def get_file_time_info(radiance_filename, split_char='MYD021KM.A'):
-    time_info = radiance_filename.split(split_char)[1]
-    year, abs_day = time_info[:4], time_info[4:7]
-    hour, minute = time_info[8:10], time_info[10:12]
-
-    return year, abs_day, hour, minute
-
-
-def minutes_since(year, abs_day, hour, minute, ref_year=2008, ref_abs_day=1, ref_hour=0, ref_minute=0, ref_second=0):
-    dt = get_datetime(year, abs_day, hour, minute)
-    ref_dt = get_datetime(ref_year, ref_abs_day, ref_hour, ref_minute, ref_second)
-
-    return int((dt - ref_dt).total_seconds() // 60)
-
-
-def get_hms(seconds):
-    m, s = divmod(seconds, 60)
-    h, m = divmod(m, 60)
-    return h, m, s
-
-
-def make_directory(dir_path):
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
+def read_nc(nc_file):
+    """return masked arrays, with masks indicating the invalid values"""
+    file = nc4.Dataset(nc_file, 'r', format='NETCDF4')
+    radiances = np.vstack([file.variables[name][:] for name in radiances_nc])
+    cloud_mask = file.variables[cloud_mask_nc][:]
+    labels = file.variables[labels_nc][:]
+    labels = labels.data[0]
+    labels = labels[..., 0]  # take lowest clouds as GT
+    file.close()
+    return radiances.data, cloud_mask.data[0], labels
 
 
 def include_cloud_mask(labels, cloud_mask):
+    labels = labels.copy()
     labels[labels >= 0] += 1
     return labels * cloud_mask
 
@@ -105,99 +86,100 @@ class GlobalNormalizer(object):
 class LocalNormalizer(object):
 
     def __call__(self, image):
-        for b in range(image.shape[0]):
-            means = np.mean(image[b], axis=(1, 2)).reshape((image[b].shape[0], 1, 1))
-            stds = np.std(image[b], axis=(1, 2)).reshape((image[b].shape[0], 1, 1))
-            image[b] = (image[b] - means) / stds
+        means = np.mean(image, axis=(1, 2)).reshape((image.shape[0], 1, 1))
+        stds = np.std(image, axis=(1, 2)).reshape((image.shape[0], 1, 1))
+        image = (image - means) / stds
         return image
 
 
-class TileExtractor:
+def divide_into_tiles(tile_size, offset, radiances):
+    img_width = radiances.shape[1]
+    img_height = radiances.shape[2]
 
-    def __init__(self, tile_size, offset):
-        """
-        Args:
-             tile_size: size of tiles (size of input to network)
-             offset: size difference between input and output of network (e.g. due to valid convolutions)
-        """
+    output_size = tile_size - 2 * offset
+    nb_outputs_row = (img_width - 2 * offset) // output_size
+    nb_outputs_col = (img_height - 2 * offset) // output_size
 
-        self.tile_size = tile_size
-        self.offset = offset
+    radiances = []
+    locations = []
 
-    def __call__(self, radiances, labels):
-        """
-        Can be used to split a swath into multiple tiles.
-
-        Args:
-            radiances: channels of full swath
-            labels: merge result of sparse cloud class GT and dense cloud mask GT
-
-        Returns:
-            tiles and locations where locations are the positions of the output of the network
-            (including the possible offset, see initialization).
-        """
-
-        img_width = radiances.shape[1]
-        img_height = radiances.shape[2]
-
-        output_size = self.tile_size - 2 * self.offset
-        nb_outputs_row = (img_width - 2 * self.offset) // output_size
-        nb_outputs_col = (img_height - 2 * self.offset) // output_size
-
-        tiles = []
-        label_tiles = []
-        locations = []
-
-        for i in range(nb_outputs_row):
-            for j in range(nb_outputs_col):
-                tiles.append(radiances[:, i * output_size: 2 * self.offset + (i + 1) * output_size, j * output_size: 2 * self.offset + (j + 1) * output_size])
-                label_tiles.append(labels[:, i * output_size: 2 * self.offset + (i + 1) * output_size, j * output_size: 2 * self.offset + (j + 1) * output_size])
-                locations.append(((self.offset + i * output_size, self.offset + (i + 1) * output_size),
-                                  (self.offset + j * output_size, self.offset + (j + 1) * output_size)))
-
-        # gather tiles from border regions
-        for i in range(nb_outputs_row):
-            tiles.append(radiances[:, i * output_size: 2 * self.offset + (i + 1) * output_size, img_height - self.tile_size:img_height])
-            label_tiles.append(labels[:, i * output_size: 2 * self.offset + (i + 1) * output_size, img_height - self.tile_size:img_height])
-            locations.append(((self.offset + i * output_size, self.offset + (i + 1) * output_size),
-                              (self.offset + img_height - self.tile_size, img_height - self.offset)))
-
+    # --- gather tiles from within swath ---
+    for i in range(nb_outputs_row):
         for j in range(nb_outputs_col):
-            tiles.append(radiances[:, img_width - self.tile_size:img_width, j * output_size: 2 * self.offset + (j + 1) * output_size])
-            label_tiles.append(labels[:, img_width - self.tile_size:img_width, j * output_size: 2 * self.offset + (j + 1) * output_size])
-            locations.append(((self.offset + img_width - self.tile_size, img_width - self.offset),
-                              (self.offset + j * output_size, self.offset + (j + 1) * output_size)))
+            radiances.append(radiances[:, i * output_size: 2 * offset + (i + 1) * output_size, j * output_size: 2 * offset + (j + 1) * output_size])
+            locations.append(((offset + i * output_size, offset + (i + 1) * output_size),
+                              (offset + j * output_size, offset + (j + 1) * output_size)))
 
-        tiles.append(radiances[:, img_width - self.tile_size:img_width, img_height - self.tile_size:img_height])
-        label_tiles.append(labels[:, img_width - self.tile_size:img_width, img_height - self.tile_size:img_height])
-        locations.append(((self.offset + img_width - self.tile_size, img_width - self.offset),
-                          (self.offset + img_height - self.tile_size, img_height - self.offset)))
+    # --- gather tiles from bottom row ---
+    for i in range(nb_outputs_row):
+        radiances.append(radiances[:, i * output_size: 2 * offset + (i + 1) * output_size, img_height - tile_size:img_height])
+        locations.append(((offset + i * output_size, offset + (i + 1) * output_size),
+                          (offset + img_height - tile_size, img_height - offset)))
 
-        tiles = np.stack(tiles)
-        label_tiles = np.stack(label_tiles)
-        locations = np.stack(locations)
+    # --- gather tiles from most right column ---
+    for j in range(nb_outputs_col):
+        radiances.append(radiances[:, img_width - tile_size:img_width, j * output_size: 2 * offset + (j + 1) * output_size])
+        locations.append(((offset + img_width - tile_size, img_width - offset),
+                          (offset + j * output_size, offset + (j + 1) * output_size)))
 
-        return tiles, label_tiles, locations
+    # --- gather tile from lower right corner ---
+    radiances.append(radiances[:, img_width - tile_size:img_width, img_height - tile_size:img_height])
+    locations.append(((offset + img_width - tile_size, img_width - offset),
+                      (offset + img_height - tile_size, img_height - offset)))
 
+    radiances = np.stack(radiances)
+    locations = np.stack(locations)
 
-def get_tile_sampler(dataset, allowed_idx=None, ext="npz"):
-    indices = []
-    paths = dataset.file_paths.copy()
-
-    if allowed_idx is not None:
-        paths = [paths[i] for i in allowed_idx]
-
-    for i, swath_path in enumerate(paths):
-        swath, *_ = read_npz(swath_path)
-
-        indices += [(i, j) for j in range(swath.shape[0])]
-
-    return SubsetRandomSampler(indices)
+    return radiances, locations
 
 
-def tile_collate(swath_tiles):
-    data = np.vstack([tiles for _, tiles, _, _, _ in swath_tiles])
-    target = np.hstack([labels for *_, labels in swath_tiles])
+def get_sampling_mask(mask_shape, tile_size):
+    """
+    Returns a mask of allowed centers for the tiles to be sampled. Excludes all points within
+    a tile_size offset from the border regions.
+    """
+    mask = np.ones(mask_shape, dtype=np.uint8)
+    mask[:, :tile_size] = 0
+    mask[:, -tile_size:] = 0
+    mask[:tile_size, :] = 0
+    mask[-tile_size:, :] = 0
+    return mask
 
-    return torch.from_numpy(data).float(), torch.from_numpy(target).long()
 
+def sample_n_tiles_with_labels(radiances, cloud_mask, labels, n, tile_size=128, valid_convolution_offset=0, filter_cloudy_labels=True):
+    allowed_mask = get_sampling_mask((MAX_WIDTH, MAX_HEIGHT), tile_size)
+    labelled_mask = labels != -1
+    if filter_cloudy_labels:
+        potential_pixels = allowed_mask & labelled_mask & cloud_mask
+    else:
+        potential_pixels = allowed_mask & labelled_mask
+    potential_pixels = np.array(list(zip(*np.where(potential_pixels == 1))))
+    potential_pixels_cache = potential_pixels.copy()
+
+    if len(potential_pixels) == 0:
+        return None, None, None
+
+    if len(potential_pixels) > n:
+        idcs = np.random.choice(np.arange(len(potential_pixels)), n, replace=False)
+        potential_pixels = potential_pixels[idcs]
+    else:
+        while len(potential_pixels) < n:
+            potential_pixels = np.vstack((potential_pixels, potential_pixels_cache))
+        idcs = np.random.choice(np.arange(len(potential_pixels)), n, replace=False)
+        potential_pixels = potential_pixels[idcs]
+
+    # shift tiles randomly to avoid overfitting, but ensure that labels are within network output (in case of valid convolutions)
+    random_offsets = np.random.randint(-(tile_size // 2) + 1 + valid_convolution_offset, (tile_size // 2) - 1 - valid_convolution_offset, potential_pixels.shape)
+    potential_pixels += random_offsets
+
+    swath_tuple = (radiances, cloud_mask, labels)
+    tiles = [[] for _ in swath_tuple]
+    for pixel in potential_pixels:
+        ll = pixel - tile_size // 2
+        ur = pixel + tile_size // 2
+        for ix, variable in enumerate(swath_tuple):
+            if ix == 0:
+                tiles[ix].append(variable[:, ll[0]:ur[0], ll[1]:ur[1]])  # radiances have shape (13, height, width)
+            else:
+                tiles[ix].append(variable[ll[0]:ur[0], ll[1]:ur[1]])  # labels and cloud mask have shape (height, width)
+    return tuple(map(np.stack, tiles))
