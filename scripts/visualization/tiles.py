@@ -1,16 +1,9 @@
-import os
 import re
+import os
+import numpy as np
 from absl import app
-from absl import flags
-from .utils import *
-
-
-flags.DEFINE_string('path', None, help='Directory where npz files are located.')
-flags.DEFINE_string('type', 'train', help='Type of example (val or train)')
-flags.DEFINE_list('epoch_interval', [0, 100], help='Only training examples from epochs within this interval are selected')
-flags.DEFINE_boolean('cloud_mask_as_binary', True, help='Make cloud mask binary')
-flags.DEFINE_boolean('save', False, help='Save examples as images')
-FLAGS = flags.FLAGS
+from .flags import FLAGS
+from cumulo.utils.visualization import outputs_to_figure_or_file
 
 
 def main(_):
@@ -25,23 +18,9 @@ def main(_):
     epochs.sort()
     for epoch in epochs:
         file = file_dict[epoch]
-        data = np.load(os.path.join(FLAGS.path, file))
-
-        prediction = prediction_from_outputs(data['outputs'])
-        if FLAGS.continuous:
-            prediction = prediction_to_continuous_rgb(prediction, FLAGS.cloud_mask_as_binary)
-        else:
-            prediction = prediction_to_discrete_rgb(prediction)
-
-        ground_truth = labels_and_cloud_mask_to_rgb(data['labels'], data['cloud_mask'])
-
-        if FLAGS.save:
-            file = os.path.join(FLAGS.path, file)
-            prediction_to_file(file, prediction, ground_truth, FLAGS.cloud_mask_as_binary)
-        else:
-            prediction_to_figure(prediction, ground_truth, FLAGS.cloud_mask_as_binary)
-            plt.show()
-            plt.close()
+        file = os.path.join(FLAGS.path, file)
+        data = np.load(file)
+        outputs_to_figure_or_file(data['outputs'], data['labels'], data['cloud_mask'], FLAGS.use_continuous_colors, FLAGS.cloud_mask_as_binary, FLAGS.to_file, )
 
 
 if __name__ == '__main__':

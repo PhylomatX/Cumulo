@@ -4,7 +4,7 @@ import os
 import torch
 import random
 from torch.utils.data import Dataset
-from cumulo.utils.utils import sample_n_tiles_with_labels, read_nc, divide_into_tiles
+from cumulo.utils.pipeline import sample_n_tiles_with_labels, read_nc, divide_into_tiles
 
 
 class CumuloDataset(Dataset):

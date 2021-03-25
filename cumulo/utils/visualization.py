@@ -1,6 +1,7 @@
+import os
 import numpy as np
 import scipy.special as ss
-from cumulo.utils.utils import include_cloud_mask
+from cumulo.utils.pipeline import include_cloud_mask
 import matplotlib.pyplot as plt
 import imageio
 
@@ -18,13 +19,13 @@ NO_LABEL = np.array([250., 250., 250.]) / 255
 
 
 def prediction_from_outputs(outputs):
-    outputs[:, 1:, ...] = ss.softmax(outputs[:, 1:, ...], axis=1)
-    outputs[:, 0, ...] = ss.expit(outputs[:, 0, ...])
+    outputs[:, 0, ...] = ss.expit(outputs[:, 0, ...])  # first channel was trained for cloud mask
+    outputs[:, 1:9, ...] = ss.softmax(outputs[:, 1:, ...], axis=1)  # next 8 channels were trained for cloud classes
     return outputs
 
 
 def prediction_to_continuous_rgb(prediction, cloud_mask_is_binary=True):
-    clouds = np.matmul(prediction[1:, ...].transpose(), COLORS ** 2)
+    clouds = np.matmul(prediction[1:9, ...].transpose(), COLORS ** 2)
     clouds = np.swapaxes(clouds, 0, 1)
     if cloud_mask_is_binary:
         prediction[0][prediction[0] < 0.5] = 0
@@ -39,7 +40,7 @@ def prediction_to_continuous_rgb(prediction, cloud_mask_is_binary=True):
 def prediction_to_discrete_rgb(prediction):
     prediction[0][prediction[0] < 0.5] = 0
     prediction[0][prediction[0] >= 0.5] = 1
-    flat = np.argmax(prediction[1:, ...], 0)
+    flat = np.argmax(prediction[1:9, ...], 0)
     prediction = include_cloud_mask(flat, prediction[0]).astype(np.int)
     colors_merged = np.vstack([NO_CLOUD, COLORS])
     prediction = colors_merged[prediction.reshape(-1)].reshape(*prediction.shape, 3)
@@ -75,3 +76,20 @@ def prediction_to_file(npz_file, prediction, ground_truth, cloud_mask_as_binary=
     if cloud_mask_as_binary:
         prediction[np.any(prediction != NO_CLOUD[0], 2)] = NO_LABEL
         imageio.imwrite(npz_file.replace('.npz', '_maskpred.png'), (prediction * 255).astype(np.uint8))
+
+
+def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors=True, cloud_mask_as_binary=True, to_file=True, file=''):
+    prediction = prediction_from_outputs(outputs)
+    if use_continuous_colors:
+        prediction = prediction_to_continuous_rgb(prediction, cloud_mask_as_binary)
+    else:
+        prediction = prediction_to_discrete_rgb(prediction)
+
+    ground_truth = labels_and_cloud_mask_to_rgb(labels, cloud_mask)
+
+    if to_file:
+        prediction_to_file(file, prediction, ground_truth, cloud_mask_as_binary)
+    else:
+        prediction_to_figure(prediction, ground_truth, cloud_mask_as_binary)
+        plt.show()
+        plt.close()

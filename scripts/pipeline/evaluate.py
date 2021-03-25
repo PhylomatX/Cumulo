@@ -6,7 +6,7 @@ from absl import app
 from absl import flags
 import sklearn.metrics as sm
 import matplotlib.pyplot as plt
-from cumulo.utils.utils import include_cloud_mask
+from cumulo.utils.pipeline import include_cloud_mask
 
 flags.DEFINE_string('path', None, help='Location of predictions')
 flags.DEFINE_string('o_path', None, help='Save location, defaults to above path')
