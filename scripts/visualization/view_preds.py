@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from absl import app
 from absl import flags
 from cumulo.utils.utils import include_cloud_mask
+import imageio
 
 flags.DEFINE_string('path', None, help='Location of predictions')
 flags.DEFINE_boolean('save', False, help='Save predictions as images')
@@ -78,27 +79,12 @@ def main(_):
             plt.show()
             plt.close()
         else:
-            figsize = (15, 12)
-            fig, axs = plt.subplots(1, 1, figsize=figsize)
-            plt.title('Predicted cloud classes')
-            plt.imshow(prediction)
-            plt.tight_layout()
-            plt.savefig(os.path.join(FLAGS.path, file.replace('.npz', '_classpred.png')))
-            plt.close()
-            fig, axs = plt.subplots(1, 1, figsize=figsize)
-            plt.title('Ground Truth')
-            plt.imshow(labels)
-            plt.tight_layout()
-            plt.savefig(os.path.join(FLAGS.path, file.replace('.npz', '_gt.png')))
-            plt.close()
+            file = os.path.join(FLAGS.path, file)
+            imageio.imwrite(file.replace('.npz', '_classpred.png'), (prediction * 255).astype(np.uint8))
+            imageio.imwrite(file.replace('.npz', '_gt.png'), (labels * 255).astype(np.uint8))
             if FLAGS.binary_mask:
-                fig, axs = plt.subplots(1, 1, figsize=figsize)
                 prediction[np.any(prediction != no_cloud[0], 2)] = no_label
-                plt.title('Predicted cloud mask')
-                plt.imshow(prediction)
-                plt.tight_layout()
-                plt.savefig(os.path.join(FLAGS.path, file.replace('.npz', '_cloudmaskpred.png')))
-                plt.close()
+                imageio.imwrite(file.replace('.npz', '_maskpred.png'), (prediction * 255).astype(np.uint8))
 
 
 if __name__ == '__main__':

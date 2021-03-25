@@ -21,7 +21,7 @@ def main(_):
     if len(metrics['val_acc']) > 0:
         axs[1].plot(np.arange(len(metrics['val_acc'])), metrics['val_acc'], label='val')
     axs[1].set_title('Accuracies')
-    axs[0].legend()
+    axs[1].legend()
     plt.savefig(FLAGS.path.replace('.pkl', '.png'))
 
 

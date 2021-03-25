@@ -30,10 +30,10 @@ def main(_):
         file = file_dict[epoch]
         data = np.load(os.path.join(FLAGS.path, file))
         labels = data['labels']
-        outputs = data['predictions'] + 1
-        # cloud_mask = data['cloud_mask']
-        # merged = include_cloud_mask(labels, cloud_mask)
-        merged = labels
+        outputs = data['outputs'] + 1
+        cloud_mask = data['cloud_mask']
+        merged = include_cloud_mask(labels, cloud_mask)
+        # merged = labels
         cmap = colors.ListedColormap(['k', 'whitesmoke', 'tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple',
                                       'tab:brown', 'tab:pink', 'dimgrey', 'tab:olive', 'tab:cyan'])
         for i in range(sample_interval[0], sample_interval[1]):
