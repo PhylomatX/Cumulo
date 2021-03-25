@@ -3,7 +3,7 @@ from cumulo.utils.basics import include_cloud_mask, probabilities_from_outputs
 import matplotlib.pyplot as plt
 import imageio
 
-COLORS = np.array([[153., 153., 153.],  # grey
+COLORS = np.array([[247., 22., 232.],  # pink
                    [229., 51., 51.],  # red
                    [232., 232., 21.],  # yellow
                    [16., 204., 204.],  # turquoise
