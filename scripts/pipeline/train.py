@@ -14,7 +14,7 @@ from cumulo import __file__ as arch_src
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
-from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer
+from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
 from flags import FLAGS
 
 
@@ -220,8 +220,8 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
                 if FLAGS.examples and epoch % FLAGS.analysis_freq == 0:
                     if sample_ix == 0:
                         np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'),
-                                 labels=labels[:1], outputs=outputs[:1, ...],
-                                 cloud_mask=cloud_mask[:1])
+                                 labels=labels[0], outputs=outputs[0, ...],
+                                 cloud_mask=cloud_mask[0])
 
                 mask_prediction = outputs[:, 0, ...]
                 mask_prediction[mask_prediction < 0.5] = 0

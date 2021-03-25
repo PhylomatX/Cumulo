@@ -5,7 +5,9 @@ import os
 import sys
 from tqdm import tqdm
 from cumulo.data.loader import CumuloDataset
-from cumulo.utils.utils import GlobalNormalizer, LocalNormalizer, include_cloud_mask
+from cumulo.utils.visualization import outputs_to_figure_or_file
+from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
+from cumulo.utils.evaluation import evaluate_file, evaluate_clouds
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
 from absl import app
@@ -21,7 +23,7 @@ def load_model(model_dir):
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
     else:
         raise ValueError('Model type not known.')
-    model_path = os.path.join(model_dir, FLAGS.m_name)
+    model_path = os.path.join(model_dir, FLAGS.model_name)
     model.load_state_dict(torch.load(model_path))
     return model.eval()
 
@@ -31,10 +33,7 @@ def predict_tiles(model, tiles, device, batch_size):
     b_num = math.ceil(tiles.shape[0] / batch_size)
     ix = 0
     output_size = FLAGS.tile_size - 2 * FLAGS.valid_convolution_offset
-    if FLAGS.raw_predictions:
-        predictions = np.zeros((tiles.shape[0], FLAGS.nb_classes, output_size, output_size))
-    else:
-        predictions = np.zeros((tiles.shape[0], output_size, output_size))
+    predictions = np.zeros((tiles.shape[0], FLAGS.nb_classes, output_size, output_size))
     remaining = 0
 
     for b in range(b_num):
@@ -42,7 +41,7 @@ def predict_tiles(model, tiles, device, batch_size):
         batch = np.zeros((batch_size, *tiles.shape[1:]))
         upper = ix + batch_size
         if upper > tiles.shape[0]:
-            # --- fill batch with tiles from the beginning to avoid artefacts due to zero tiles at the end ---
+            # fill batch with tiles from the beginning to avoid artefacts due to zero tiles at the end
             remaining = tiles.shape[0] - ix
             batch[:remaining] = tiles[ix:]
             batch[remaining:] = tiles[:upper - tiles.shape[0]]
@@ -55,18 +54,6 @@ def predict_tiles(model, tiles, device, batch_size):
         outputs = model(inputs)
         outputs = outputs.cpu().detach()
 
-        # --- postprocessing ---
-        if FLAGS.raw_predictions:
-            outputs[:, 1:, ...] = torch.softmax(outputs[:, 1:, ...], dim=1)  # last 8 channels are trained with LogSoftMax and CrossEntropy
-            outputs[:, 0, ...] = torch.sigmoid(outputs[:, 0, ...])  # first channel is trained with Sigmoid and BinaryCrossEntropy
-            outputs = outputs.numpy()
-        else:
-            outputs = outputs.numpy()
-            cloud_mask_pred = outputs[:, 0, ...]
-            cloud_mask_pred[cloud_mask_pred < 0.5] = 0
-            cloud_mask_pred[cloud_mask_pred >= 0.5] = 1
-            cloud_class_pred = np.argmax(outputs[:, 1:, ...], axis=1)
-            outputs = include_cloud_mask(cloud_class_pred, cloud_mask_pred)
         if upper > tiles.shape[0]:
             predictions[ix:] = outputs[:remaining]
         else:
@@ -75,10 +62,11 @@ def predict_tiles(model, tiles, device, batch_size):
     return predictions
 
 
+# noinspection PyUnboundLocalVariable
 def main(_):
-    if not os.path.exists(FLAGS.o_path):
-        os.makedirs(FLAGS.o_path)
-    with open(os.path.join(FLAGS.o_path, 'eval_flagfile.txt'), 'w') as f:
+    if not os.path.exists(FLAGS.output_path):
+        os.makedirs(FLAGS.output_path)
+    with open(os.path.join(FLAGS.output_path, 'eval_flagfile.txt'), 'w') as f:
         f.writelines(FLAGS.flags_into_string())
 
     if FLAGS.local_norm:
@@ -92,8 +80,8 @@ def main(_):
         print(f"Found test set with {len(test_idx)} files.")
     except FileNotFoundError:
         test_idx = None
-    if FLAGS.pred_num is not None:
-        test_idx = test_idx[:FLAGS.pred_num]
+    if FLAGS.prediction_number is not None:
+        test_idx = test_idx[:FLAGS.prediction_number]
     dataset = CumuloDataset(d_path=FLAGS.d_path, normalizer=normalizer, indices=test_idx, prediction_mode=True,
                             tile_size=FLAGS.tile_size, valid_convolution_offset=FLAGS.valid_convolution_offset)
     print(f"Predicting {len(dataset)} files.")
@@ -104,20 +92,52 @@ def main(_):
     model = load_model(FLAGS.m_path)
     model.to(device)
 
+    if FLAGS.immediate_evaluation:
+        total_report = ''
+        mask_names = [0, 1]  # cloud mask targets ('no cloud', 'cloud')
+        label_names = list(range(8))  # cloud class targets (8 different cloud types)
+        total_labels = np.array([])
+        total_probabilities = None
+
     for swath in tqdm(dataset):
-        filename, tiles, locations, cloud_mask, labels = swath
-        predictions = predict_tiles(model, tiles, device, FLAGS.dataset_bs)
-        merged = np.ones((FLAGS.nb_classes if FLAGS.raw_predictions else 1, *cloud_mask.squeeze().shape)) * -1
+        filename, radiances, locations, cloud_mask, labels = swath
+        predictions = predict_tiles(model, radiances, device, FLAGS.dataset_bs)
+        outputs = np.ones((FLAGS.nb_classes if FLAGS.raw_predictions else 1, *cloud_mask.squeeze().shape)) * -1
         for ix, loc in enumerate(locations):
-            merged[:, loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
+            outputs[:, loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
 
         # Remove unpredicted border region possibly caused by offset / valid convolutions
-        merged = merged[:, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
+        outputs = outputs[:, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
         labels = labels.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
-        np.savez(os.path.join(FLAGS.o_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
-                 prediction=merged, labels=labels, cloud_mask=cloud_mask)
+        if FLAGS.immediate_evaluation:
+            filename = os.path.join(FLAGS.output_path, filename)
+            report, probabilities, labels = evaluate_file(filename, outputs, labels, cloud_mask, label_names, mask_names)
+            # --- Save intermediate report and merge probabilities and labels for total evaluation ---
+            total_report += report
+            with open(os.path.join(FLAGS.output_path, 'report.txt'), 'w') as f:
+                f.write(total_report)
+            total_labels = np.append(total_labels, labels)
+            if total_probabilities is None:
+                total_probabilities = probabilities
+            else:
+                total_probabilities = np.vstack(total_probabilities, probabilities)
+            outputs_to_figure_or_file(outputs, labels, cloud_mask, FLAGS.use_continuous_colors,
+                                      FLAGS.cloud_mask_as_binary, FLAGS.to_file, filename)
+        else:
+            np.savez(os.path.join(FLAGS.output_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
+                     outputs=outputs, labels=labels, cloud_mask=cloud_mask)
+
+    if FLAGS.immediate_evaluation:
+        # --- Generate total evaluation and save final report ---
+        total_report += '#### TOTAL ####\n\n'
+        total_file = os.path.join(FLAGS.output_path, 'total.npz')
+        report, matrix = evaluate_clouds(total_probabilities, total_labels, label_names, total_file)
+        total_report += 'Cloud class eval:\n\n' + report + '\n\n'
+        total_report += matrix
+        with open(os.path.join(FLAGS.output_path, 'report.txt'), 'w') as f:
+            f.write(total_report)
 
 
 if __name__ == '__main__':

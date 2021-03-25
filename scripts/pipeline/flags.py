@@ -1,10 +1,10 @@
 from absl import flags
 
 # --- predict ---
-flags.DEFINE_string('m_name', 'val_best_weighted', help='Model name')
-flags.DEFINE_string('o_path', None, help='Location for output')
-flags.DEFINE_bool('raw_predictions', True, help='Save network outputs for later visualization')
-flags.DEFINE_integer('pred_num', None, help='Number of prediction files')
+flags.DEFINE_string('model_name', 'val_best', help='Model name')
+flags.DEFINE_string('output_path', None, help='Path to folder where output should get saved')
+flags.DEFINE_integer('prediction_number', None, help='Number of files for which predictions should get generated')
+flags.DEFINE_bool('immediate_evaluation', True, help='Do not save predictions, but evaluate them immediately and save images and reports to file')
 
 # --- train ---
 flags.DEFINE_string('d_path', '/storage/group/dataset_mirrors/01_incoming/satellite/Cumulo/unprocessed/nc/clean/', help='Data path')

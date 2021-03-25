@@ -3,7 +3,7 @@ from absl import flags
 import numpy as np
 import os
 from cumulo.data.loader import CumuloDataset
-from cumulo.utils.utils import get_dataset_statistics
+from cumulo.utils.training import get_dataset_statistics
 
 flags.DEFINE_string('path', None, help='Directory where npz files are located.')
 flags.DEFINE_integer('class_num', 9, help='Number of classes.')

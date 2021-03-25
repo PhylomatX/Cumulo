@@ -4,13 +4,15 @@ import os
 import torch
 import random
 from torch.utils.data import Dataset
-from cumulo.utils.utils import sample_n_tiles_with_labels, read_nc, divide_into_tiles
+from cumulo.utils.training import sample_n_tiles_with_labels
+from cumulo.utils.basics import read_nc
+from cumulo.utils.evaluation import divide_into_tiles
 
 
 class CumuloDataset(Dataset):
 
     def __init__(self, d_path, normalizer=None, indices=None, prediction_mode: bool = False,
-                 batch_size: int = 1, tile_size: int = 128, rotation_probability: float = 0,
+                 batch_size: int = 1, tile_size: int = 256, rotation_probability: float = 0,
                  valid_convolution_offset=0):
         self.root_dir = d_path
         self.file_paths = glob.glob(os.path.join(d_path, "*.nc"))
