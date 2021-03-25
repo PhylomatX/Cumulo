@@ -11,7 +11,7 @@ from cumulo.utils.evaluation import evaluate_file, evaluate_clouds
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
 from absl import app
-from .flags import FLAGS
+from flags import FLAGS
 
 # add arg of form --flagfile 'PATH_TO_FLAGFILE' at the beginning and add --o_path and --pred_num
 
@@ -112,7 +112,7 @@ def main(_):
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
         if FLAGS.immediate_evaluation:
-            filename = os.path.join(FLAGS.output_path, filename)
+            filename = filename.replace(FLAGS.d_path, FLAGS.output_path + '/').replace('.nc', '.npz')
             report, probabilities, labels = evaluate_file(filename, outputs, labels, cloud_mask, label_names, mask_names)
             # --- Save intermediate report and merge probabilities and labels for total evaluation ---
             total_report += report

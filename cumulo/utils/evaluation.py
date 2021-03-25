@@ -1,9 +1,10 @@
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from sklearn import metrics as sm
 
 from cumulo.utils.basics import probabilities_from_outputs
-from scripts.pipeline.evaluate import FLAGS
 
 
 def divide_into_tiles(tile_size, offset, radiances):
@@ -163,7 +164,7 @@ def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names):
     cloudy_class_probabilities = probabilities[1:9].reshape(8, -1)[:, cloud_mask == 1]
 
     # --- Generate file-wise evaluation ---
-    report = f"#### {file.replace(FLAGS.path, '')} ####\n\n"
+    report = f"#### {file} ####\n\n"
     mask_report = evaluate_cloud_mask(mask_probabilities, cloud_mask, mask_names, file)
     report += 'Cloud mask eval:\n\n' + mask_report + '\n\n'
     class_report, class_matrix = evaluate_clouds(cloudy_class_probabilities, cloudy_labels, label_names, file)

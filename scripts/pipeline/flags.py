@@ -2,6 +2,8 @@ from absl import flags
 
 # --- predict ---
 flags.DEFINE_string('model_name', 'val_best', help='Model name')
+flags.DEFINE_string('m_name', 'val_best', help='')
+flags.DEFINE_bool('raw_predictions', False, help='')
 flags.DEFINE_string('output_path', None, help='Path to folder where output should get saved')
 flags.DEFINE_integer('prediction_number', None, help='Number of files for which predictions should get generated')
 flags.DEFINE_bool('immediate_evaluation', True, help='Do not save predictions, but evaluate them immediately and save images and reports to file')
