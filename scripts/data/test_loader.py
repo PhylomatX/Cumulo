@@ -12,7 +12,7 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    dataset = CumuloDataset(FLAGS.path, ext="nc", batch_size=64, tile_size=128, center_distance=0, epoch_size=20, indices=np.arange(53))
+    dataset = CumuloDataset(FLAGS.path, indices=np.arange(53), batch_size=64, tile_size=128)
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, batch_size=1, num_workers=8)
     total_time = 0
     r_seed = 6

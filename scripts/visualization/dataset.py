@@ -8,7 +8,7 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    dataset = CumuloDataset(FLAGS.npz_path, ext="npz")
+    dataset = CumuloDataset(FLAGS.npz_path)
     print(len(dataset))
 
     for sample in range(len(dataset)):

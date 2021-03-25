@@ -56,9 +56,9 @@ def main(_):
             prediction = np.expand_dims(prediction, -1)
             colors_merged = np.vstack([no_cloud, colors])
             prediction = colors_merged[prediction.reshape(-1)].reshape(*prediction.shape, 3)
-        prediction = prediction[FLAGS.offset:-1 - FLAGS.offset, FLAGS.offset:-1 - FLAGS.offset, :]
-        labels = data['labels'][FLAGS.offset:-1 - FLAGS.offset, FLAGS.offset:-1 - FLAGS.offset]
-        cloud_mask = data['cloud_mask'][FLAGS.offset:-1 - FLAGS.offset, FLAGS.offset:-1 - FLAGS.offset]
+        prediction = prediction[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, :]
+        labels = data['labels'][FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
+        cloud_mask = data['cloud_mask'][FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
         labels = include_cloud_mask(labels, cloud_mask)
         colors_merged = np.vstack([no_cloud, colors, no_label])
         flat_labels = labels.reshape(-1)

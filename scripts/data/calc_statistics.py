@@ -17,8 +17,7 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    dataset = CumuloDataset(FLAGS.path, batch_size=FLAGS.dataset_bs, tile_size=FLAGS.tile_size,
-                            center_distance=FLAGS.center_distance, ext=FLAGS.filetype)
+    dataset = CumuloDataset(FLAGS.path, batch_size=FLAGS.dataset_bs, tile_size=FLAGS.tile_size)
     weights, class_weights, m, std = get_dataset_statistics(dataset, FLAGS.class_num, tile_size=FLAGS.tile_size, nb_samples=FLAGS.nb_tiles)
     print(weights)
     print(class_weights)

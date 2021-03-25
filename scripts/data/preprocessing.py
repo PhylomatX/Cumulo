@@ -36,7 +36,7 @@ def check_for_empty_labels(tile_size, labels):
     allowed_pixels = get_sampling_mask((MAX_WIDTH, MAX_HEIGHT), tile_size)
     label_mask = get_label_mask(labels)
     potential_pixels = allowed_pixels & label_mask
-    potential_pixels_idx = np.array(list(zip(*np.where(potential_pixels[0] == 1))))
+    potential_pixels_idx = np.array(list(zip(*np.where(potential_pixels == 1))))
 
     if len(potential_pixels_idx) == 0:
         print('No labels!')

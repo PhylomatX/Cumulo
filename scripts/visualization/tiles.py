@@ -5,7 +5,6 @@ from absl import flags
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
-from cumulo.utils.utils import include_cloud_mask
 
 flags.DEFINE_string('path', None, help='Directory where npz files are located.')
 flags.DEFINE_string('type', 'train', help='Type of example (val or train)')
