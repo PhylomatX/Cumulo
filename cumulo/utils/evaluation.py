@@ -154,7 +154,7 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file):
     return report, matrix
 
 
-def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names, report, total_probabilities, total_labels):
+def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names):
     labels = labels.reshape(-1)
     cloud_mask = cloud_mask.reshape(-1)
     cloudy_labels = labels[cloud_mask == 1]
@@ -162,18 +162,12 @@ def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names, re
     mask_probabilities = probabilities[0].copy().reshape(-1)
     cloudy_class_probabilities = probabilities[1:9].reshape(8, -1)[:, cloud_mask == 1]
 
-    # --- Generate file-wise evaluation and save intermediate report ---
-    report += f"#### {file.replace(FLAGS.path, '')} ####\n\n"
+    # --- Generate file-wise evaluation ---
+    report = f"#### {file.replace(FLAGS.path, '')} ####\n\n"
     mask_report = evaluate_cloud_mask(mask_probabilities, cloud_mask, mask_names, file)
     report += 'Cloud mask eval:\n\n' + mask_report + '\n\n'
     class_report, class_matrix = evaluate_clouds(cloudy_class_probabilities, cloudy_labels, label_names, file)
     report += 'Cloud class eval:\n\n' + class_report + '\n\n'
     report += class_matrix + '\n\n\n\n'
 
-    # --- Save probabilities and labels for total evaluation ---
-    total_labels = np.append(total_labels, cloudy_labels)
-    if total_probabilities is None:
-        total_probabilities = cloudy_class_probabilities
-    else:
-        total_probabilities = np.vstack(total_probabilities, cloudy_class_probabilities)
-    return report, total_labels, total_probabilities
+    return report, cloudy_class_probabilities, cloudy_labels

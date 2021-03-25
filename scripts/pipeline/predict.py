@@ -5,7 +5,9 @@ import os
 import sys
 from tqdm import tqdm
 from cumulo.data.loader import CumuloDataset
+from cumulo.utils.visualization import outputs_to_figure_or_file
 from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
+from cumulo.utils.evaluation import evaluate_file, evaluate_clouds
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
 from absl import app
@@ -60,6 +62,7 @@ def predict_tiles(model, tiles, device, batch_size):
     return predictions
 
 
+# noinspection PyUnboundLocalVariable
 def main(_):
     if not os.path.exists(FLAGS.output_path):
         os.makedirs(FLAGS.output_path)
@@ -89,6 +92,13 @@ def main(_):
     model = load_model(FLAGS.m_path)
     model.to(device)
 
+    if FLAGS.immediate_evaluation:
+        total_report = ''
+        mask_names = [0, 1]  # cloud mask targets ('no cloud', 'cloud')
+        label_names = list(range(8))  # cloud class targets (8 different cloud types)
+        total_labels = np.array([])
+        total_probabilities = None
+
     for swath in tqdm(dataset):
         filename, radiances, locations, cloud_mask, labels = swath
         predictions = predict_tiles(model, radiances, device, FLAGS.dataset_bs)
@@ -101,8 +111,33 @@ def main(_):
         labels = labels.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
-        np.savez(os.path.join(FLAGS.output_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
-                 outputs=outputs, labels=labels, cloud_mask=cloud_mask)
+        if FLAGS.immediate_evaluation:
+            filename = os.path.join(FLAGS.output_path, filename)
+            report, probabilities, labels = evaluate_file(filename, outputs, labels, cloud_mask, label_names, mask_names)
+            # --- Save intermediate report and merge probabilities and labels for total evaluation ---
+            total_report += report
+            with open(os.path.join(FLAGS.output_path, 'report.txt'), 'w') as f:
+                f.write(total_report)
+            total_labels = np.append(total_labels, labels)
+            if total_probabilities is None:
+                total_probabilities = probabilities
+            else:
+                total_probabilities = np.vstack(total_probabilities, probabilities)
+            outputs_to_figure_or_file(outputs, labels, cloud_mask, FLAGS.use_continuous_colors,
+                                      FLAGS.cloud_mask_as_binary, FLAGS.to_file, filename)
+        else:
+            np.savez(os.path.join(FLAGS.output_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
+                     outputs=outputs, labels=labels, cloud_mask=cloud_mask)
+
+    if FLAGS.immediate_evaluation:
+        # --- Generate total evaluation and save final report ---
+        total_report += '#### TOTAL ####\n\n'
+        total_file = os.path.join(FLAGS.output_path, 'total.npz')
+        report, matrix = evaluate_clouds(total_probabilities, total_labels, label_names, total_file)
+        total_report += 'Cloud class eval:\n\n' + report + '\n\n'
+        total_report += matrix
+        with open(os.path.join(FLAGS.output_path, 'report.txt'), 'w') as f:
+            f.write(total_report)
 
 
 if __name__ == '__main__':

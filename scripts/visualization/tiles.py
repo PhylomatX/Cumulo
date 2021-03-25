@@ -20,7 +20,8 @@ def main(_):
         file = file_dict[epoch]
         file = os.path.join(FLAGS.path, file)
         data = np.load(file)
-        outputs_to_figure_or_file(data['outputs'], data['labels'], data['cloud_mask'], FLAGS.use_continuous_colors, FLAGS.cloud_mask_as_binary, FLAGS.to_file, )
+        outputs_to_figure_or_file(data['outputs'], data['labels'], data['cloud_mask'], FLAGS.use_continuous_colors,
+                                  FLAGS.cloud_mask_as_binary, FLAGS.to_file)
 
 
 if __name__ == '__main__':

@@ -70,7 +70,8 @@ def prediction_to_file(npz_file, prediction, ground_truth, cloud_mask_as_binary=
         imageio.imwrite(npz_file.replace('.npz', '_maskpred.png'), (prediction * 255).astype(np.uint8))
 
 
-def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors=True, cloud_mask_as_binary=True, to_file=True, file=''):
+def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors=True, cloud_mask_as_binary=True,
+                              to_file=True, npz_file=''):
     prediction = probabilities_from_outputs(outputs)
     if use_continuous_colors:
         prediction = prediction_to_continuous_rgb(prediction, cloud_mask_as_binary)
@@ -80,7 +81,7 @@ def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors
     ground_truth = labels_and_cloud_mask_to_rgb(labels, cloud_mask)
 
     if to_file:
-        prediction_to_file(file, prediction, ground_truth, cloud_mask_as_binary)
+        prediction_to_file(npz_file, prediction, ground_truth, cloud_mask_as_binary)
     else:
         prediction_to_figure(prediction, ground_truth, cloud_mask_as_binary)
         plt.show()
