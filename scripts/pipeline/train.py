@@ -220,8 +220,8 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
                 if FLAGS.examples and epoch % FLAGS.analysis_freq == 0:
                     if sample_ix == 0:
                         np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'),
-                                 labels=labels[:1], outputs=outputs[:1, ...],
-                                 cloud_mask=cloud_mask[:1])
+                                 labels=labels[0], outputs=outputs[0, ...],
+                                 cloud_mask=cloud_mask[0])
 
                 mask_prediction = outputs[:, 0, ...]
                 mask_prediction[mask_prediction < 0.5] = 0
