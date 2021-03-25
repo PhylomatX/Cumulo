@@ -6,7 +6,8 @@ from absl import app
 from absl import flags
 import sklearn.metrics as sm
 import matplotlib.pyplot as plt
-from cumulo.utils.pipeline import include_cloud_mask
+from cumulo.utils.basics import include_cloud_mask
+from cumulo.utils.evaluation import write_confusion_matrix, get_target_names
 
 flags.DEFINE_string('path', None, help='Location of predictions')
 flags.DEFINE_string('o_path', None, help='Save location, defaults to above path')
@@ -14,26 +15,6 @@ flags.DEFINE_bool('all', True, help='Include file-wise evaluation in report.')
 flags.DEFINE_bool('mask', False, help='Include file-wise cloud mask eval.')
 flags.DEFINE_bool('mask_total', False, help='Include total cloud mask eval.')
 FLAGS = flags.FLAGS
-
-
-def write_confusion_matrix(cm: np.array, names: list) -> str:
-    txt = f"{'':<15}"
-    for name in names:
-        txt += f"{name:<15}"
-    txt += '\n'
-    for ix, name in enumerate(names):
-        txt += f"{name:<15}"
-        for num in cm[ix]:
-            txt += f"{num:<15}"
-        txt += '\n'
-    return txt
-
-
-def get_target_names(gtl: np.ndarray, hcl: np.ndarray, targets: list) -> list:
-    """ Extracts the names of the labels which appear in gtl and hcl. """
-    targets = np.array(targets)
-    total = np.unique(np.concatenate((gtl, hcl), axis=0)).astype(int)
-    return list(targets[total])
 
 
 def main(_):

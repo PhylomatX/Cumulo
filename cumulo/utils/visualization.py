@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import scipy.special as ss
-from cumulo.utils.pipeline import include_cloud_mask
+from cumulo.utils.basics import include_cloud_mask
 import matplotlib.pyplot as plt
 import imageio
 

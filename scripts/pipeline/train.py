@@ -14,7 +14,7 @@ from cumulo import __file__ as arch_src
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
-from cumulo.utils.pipeline import GlobalNormalizer, LocalNormalizer
+from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
 from flags import FLAGS
 
 
