@@ -3,8 +3,7 @@ from absl import app
 from absl import flags
 import numpy as np
 from tqdm import tqdm
-from cumulo.data.nc_loader import read_nc
-from cumulo.data.nc_tile_extractor import get_sampling_mask, get_label_mask
+from cumulo.utils.utils import read_nc, get_sampling_mask
 
 flags.DEFINE_string('nc_path', None, help='Directory where nc files are located.')
 flags.DEFINE_integer('size', 128, help='Tile size.')
@@ -47,13 +46,8 @@ def check_for_empty_labels(tile_size, labels):
 
 def main(_):
     files = os.listdir(FLAGS.nc_path)
-    removed = 0
-    artefacts = os.path.join(FLAGS.nc_path, 'artefacts')
-    no_labels = os.path.join(FLAGS.nc_path, 'no_labels')
-    if not os.path.exists(artefacts):
-        os.makedirs(artefacts)
-    if not os.path.exists(no_labels):
-        os.makedirs(no_labels)
+    artefacts = []
+    no_labels = []
     clean = os.path.join(FLAGS.nc_path, 'clean')
     if not os.path.exists(clean):
         os.makedirs(clean)

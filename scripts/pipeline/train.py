@@ -43,10 +43,10 @@ def main(_):
     m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
     std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
-    custom_class_weights = np.ones_like(class_weights)
-    custom_class_weights[3] *= 10
-    custom_class_weights[4] /= 10
-    class_weights *= custom_class_weights
+    # custom_class_weights = np.ones_like(class_weights)
+    # custom_class_weights[3] *= 10
+    # custom_class_weights[4] /= 10
+    # class_weights *= custom_class_weights
 
     if FLAGS.local_norm:
         print("Using local normalization.")
@@ -67,7 +67,7 @@ def main(_):
         train_idx = np.load(os.path.join(FLAGS.m_path, 'train_idx.npy'))
         val_idx = np.load(os.path.join(FLAGS.m_path, 'val_idx.npy'))
     except FileNotFoundError:
-        train_idx, val_idx, test_idx = np.split(idx, [int(.85 * tile_num), int(.9 * tile_num)])
+        train_idx, val_idx, test_idx = np.split(idx, [int(.92 * tile_num), int(.97 * tile_num)])
         np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
         np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), test_idx)
@@ -230,7 +230,7 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
                 labeled_mask = labels != -1
 
                 # statistics
-                running_loss += loss
+                running_loss += loss.item()
                 mask_accuracy = float(np.sum(mask_prediction.reshape(-1) == cloud_mask.reshape(-1)) / cloud_mask.reshape(-1).shape[0])
                 class_accuracy = float(np.sum(class_prediction[labeled_mask] == labels[labeled_mask]) / labels[labeled_mask].shape[0])
                 accuracy = (mask_accuracy + 2 * class_accuracy) / 3
