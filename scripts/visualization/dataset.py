@@ -1,27 +1,26 @@
+import os
+import imageio
+import numpy as np
 from absl import app
 from absl import flags
-from cumulo.data.loader import CumuloDataset
-import matplotlib.pyplot as plt
+from cumulo.utils.basics import read_nc
+from cumulo.utils.visualization import labels_and_cloud_mask_to_rgb
 
-flags.DEFINE_string('npz_path', None, help='Directory where npz files are located.')
+flags.DEFINE_string('path', None, help='Directory where nc files are located.')
+flags.DEFINE_integer('swath_number', 1, help='How many swaths should get visualized?')
 FLAGS = flags.FLAGS
 
 
 def main(_):
-    dataset = CumuloDataset(FLAGS.npz_path)
-    print(len(dataset))
+    files = list(filter(lambda f: 'nc' in f, os.listdir(FLAGS.path)))
 
-    for sample in range(len(dataset)):
-        rads, labs = dataset[sample]
-        fig = plt.figure(figsize=(10, 10))
-        gs = fig.add_gridspec(2, 2, hspace=0, wspace=0)
-        axs = gs.subplots(sharex='col', sharey='row')
-        axs[0, 0].imshow(labs)
-        axs[0, 1].imshow(rads[0])
-        axs[1, 0].imshow(rads[1])
-        axs[1, 1].imshow(rads[2])
-        plt.show()
-        plt.close()
+    for file in range(FLAGS.swath_number):
+        file = os.path.join(FLAGS.path, files[file])
+        radiances, cloud_mask, labels = read_nc(file)
+        ground_truth = labels_and_cloud_mask_to_rgb(labels, cloud_mask)
+        imageio.imwrite(file.replace('.nc', f'_gt.png'), (ground_truth * 255).astype(np.uint8))
+        for radiance in range(radiances.shape[0]):
+            imageio.imwrite(file.replace('.nc', f'_rad{radiance}.png'), radiances[radiance])
 
 
 if __name__ == '__main__':

@@ -90,8 +90,8 @@ def main(_):
     model.to(device)
 
     for swath in tqdm(dataset):
-        filename, tiles, locations, cloud_mask, labels = swath
-        predictions = predict_tiles(model, tiles, device, FLAGS.dataset_bs)
+        filename, radiances, locations, cloud_mask, labels = swath
+        predictions = predict_tiles(model, radiances, device, FLAGS.dataset_bs)
         outputs = np.ones((FLAGS.nb_classes if FLAGS.raw_predictions else 1, *cloud_mask.squeeze().shape)) * -1
         for ix, loc in enumerate(locations):
             outputs[:, loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]

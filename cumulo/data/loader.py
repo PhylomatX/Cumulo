@@ -12,7 +12,7 @@ from cumulo.utils.evaluation import divide_into_tiles
 class CumuloDataset(Dataset):
 
     def __init__(self, d_path, normalizer=None, indices=None, prediction_mode: bool = False,
-                 batch_size: int = 1, tile_size: int = 128, rotation_probability: float = 0,
+                 batch_size: int = 1, tile_size: int = 256, rotation_probability: float = 0,
                  valid_convolution_offset=0):
         self.root_dir = d_path
         self.file_paths = glob.glob(os.path.join(d_path, "*.nc"))

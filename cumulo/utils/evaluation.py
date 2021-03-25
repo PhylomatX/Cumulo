@@ -9,37 +9,37 @@ def divide_into_tiles(tile_size, offset, radiances):
     nb_outputs_row = (img_width - 2 * offset) // output_size
     nb_outputs_col = (img_height - 2 * offset) // output_size
 
-    radiances = []
+    tiles = []
     locations = []
 
     # --- gather tiles from within swath ---
     for i in range(nb_outputs_row):
         for j in range(nb_outputs_col):
-            radiances.append(radiances[:, i * output_size: 2 * offset + (i + 1) * output_size, j * output_size: 2 * offset + (j + 1) * output_size])
+            tiles.append(radiances[:, i * output_size: 2 * offset + (i + 1) * output_size, j * output_size: 2 * offset + (j + 1) * output_size])
             locations.append(((offset + i * output_size, offset + (i + 1) * output_size),
                               (offset + j * output_size, offset + (j + 1) * output_size)))
 
     # --- gather tiles from bottom row ---
     for i in range(nb_outputs_row):
-        radiances.append(radiances[:, i * output_size: 2 * offset + (i + 1) * output_size, img_height - tile_size:img_height])
+        tiles.append(radiances[:, i * output_size: 2 * offset + (i + 1) * output_size, img_height - tile_size:img_height])
         locations.append(((offset + i * output_size, offset + (i + 1) * output_size),
                           (offset + img_height - tile_size, img_height - offset)))
 
     # --- gather tiles from most right column ---
     for j in range(nb_outputs_col):
-        radiances.append(radiances[:, img_width - tile_size:img_width, j * output_size: 2 * offset + (j + 1) * output_size])
+        tiles.append(radiances[:, img_width - tile_size:img_width, j * output_size: 2 * offset + (j + 1) * output_size])
         locations.append(((offset + img_width - tile_size, img_width - offset),
                           (offset + j * output_size, offset + (j + 1) * output_size)))
 
     # --- gather tile from lower right corner ---
-    radiances.append(radiances[:, img_width - tile_size:img_width, img_height - tile_size:img_height])
+    tiles.append(radiances[:, img_width - tile_size:img_width, img_height - tile_size:img_height])
     locations.append(((offset + img_width - tile_size, img_width - offset),
                       (offset + img_height - tile_size, img_height - offset)))
 
-    radiances = np.stack(radiances)
+    tiles = np.stack(tiles)
     locations = np.stack(locations)
 
-    return radiances, locations
+    return tiles, locations
 
 
 def write_confusion_matrix(cm: np.array, names: list) -> str:
