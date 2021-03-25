@@ -1,5 +1,6 @@
 import netCDF4 as nc4
 import numpy as np
+from scipy import special as ss
 
 radiances_nc = ['ev_250_aggr1km_refsb_1', 'ev_250_aggr1km_refsb_2', 'ev_1km_emissive_29', 'ev_1km_emissive_33',
                 'ev_1km_emissive_34', 'ev_1km_emissive_35', 'ev_1km_emissive_36', 'ev_1km_refsb_26',
@@ -23,3 +24,9 @@ def include_cloud_mask(labels, cloud_mask):
     labels = labels.copy()
     labels[labels >= 0] += 1
     return labels * cloud_mask
+
+
+def probabilities_from_outputs(outputs):
+    outputs[0, ...] = ss.expit(outputs[0, ...])  # first channel was trained for cloud mask
+    outputs[1:9, ...] = ss.softmax(outputs[1:, ...], axis=0)  # next 8 channels were trained for cloud classes
+    return outputs

@@ -1,7 +1,5 @@
-import os
 import numpy as np
-import scipy.special as ss
-from cumulo.utils.basics import include_cloud_mask
+from cumulo.utils.basics import include_cloud_mask, probabilities_from_outputs
 import matplotlib.pyplot as plt
 import imageio
 
@@ -16,12 +14,6 @@ COLORS = np.array([[153., 153., 153.],  # grey
 
 NO_CLOUD = np.array([5., 5., 5.]) / 255
 NO_LABEL = np.array([250., 250., 250.]) / 255
-
-
-def prediction_from_outputs(outputs):
-    outputs[:, 0, ...] = ss.expit(outputs[:, 0, ...])  # first channel was trained for cloud mask
-    outputs[:, 1:9, ...] = ss.softmax(outputs[:, 1:, ...], axis=1)  # next 8 channels were trained for cloud classes
-    return outputs
 
 
 def prediction_to_continuous_rgb(prediction, cloud_mask_is_binary=True):
@@ -79,7 +71,7 @@ def prediction_to_file(npz_file, prediction, ground_truth, cloud_mask_as_binary=
 
 
 def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors=True, cloud_mask_as_binary=True, to_file=True, file=''):
-    prediction = prediction_from_outputs(outputs)
+    prediction = probabilities_from_outputs(outputs)
     if use_continuous_colors:
         prediction = prediction_to_continuous_rgb(prediction, cloud_mask_as_binary)
     else:
