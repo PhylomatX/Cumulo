@@ -112,10 +112,10 @@ def main(_):
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
         if FLAGS.immediate_evaluation:
-            pure_filename = filename.replace(FLAGS.d_path, '').replace('.nc', '')
-            if not os.path.exists(os.path.join(FLAGS.output_path, pure_filename)):
-                os.makedirs(os.path.join(FLAGS.output_path, pure_filename))
-            filename = filename.replace(FLAGS.d_path, FLAGS.output_path + f'/{pure_filename}/').replace('.nc', '.npz')
+            # pure_filename = filename.replace(FLAGS.d_path, '').replace('.nc', '')
+            # if not os.path.exists(os.path.join(FLAGS.output_path, pure_filename)):
+            #     os.makedirs(os.path.join(FLAGS.output_path, pure_filename))
+            filename = filename.replace(FLAGS.d_path, FLAGS.output_path + f'/').replace('.nc', '.npz')
             report, probabilities, cloudy_labels = evaluate_file(filename, outputs.copy(), labels.copy(), cloud_mask.copy(), label_names, mask_names)
             # --- Save intermediate report and merge probabilities and labels for total evaluation ---
             total_report += report

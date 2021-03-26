@@ -94,19 +94,19 @@ def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors
     rgb_prediction_discrete = prediction_to_discrete_rgb(prediction)
 
     # --- dilate labeled pixels for better visualization ---
-    labels_cache = labels
-    labeled_pixels = labels != -1
+    labeled_pixels = np.logical_and(labels != -1, cloud_mask == 1)
     labeled_pixels = np.array(list(zip(*np.where(labeled_pixels == 1))))
+    dilated_labels = np.ones_like(labels) * -1
     for pixel in labeled_pixels:
         for y in range(max(pixel[0] - label_dilation, 0), min(pixel[0] + label_dilation, labels.shape[0])):
             for x in range(max(pixel[1] - label_dilation, 0), min(pixel[1] + label_dilation, labels.shape[1])):
                 if y < pixel[0] - label_dilation + border_dilation or y > pixel[0] + label_dilation - border_dilation * 2:
-                    labels[y, x] = 8
+                    dilated_labels[y, x] = 8
                 else:
-                    labels[y, x] = labels_cache[pixel[0], pixel[1]]
+                    dilated_labels[y, x] = labels[pixel[0], pixel[1]]
 
-    rgb_labels = labels_to_rgb(labels)
-    rgb_ground_truth = labels_and_cloud_mask_to_rgb(labels, cloud_mask)
+    rgb_labels = labels_to_rgb(dilated_labels)
+    rgb_ground_truth = labels_and_cloud_mask_to_rgb(dilated_labels, cloud_mask)
 
     if to_file:
         prediction_to_file(npz_file, rgb_prediction_continuous, rgb_prediction_discrete, rgb_ground_truth, rgb_labels, cloud_mask_as_binary)

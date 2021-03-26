@@ -164,7 +164,7 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file, 
 def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names):
     labels = labels.reshape(-1)
     cloud_mask = cloud_mask.reshape(-1)
-    cloudy_labels_mask = np.logical_and(cloud_mask == 0, labels != -1)
+    cloudy_labels_mask = np.logical_and(cloud_mask == 1, labels != -1)  # use only cloudy labels for evaluation
     cloudy_labels = labels[cloudy_labels_mask]
     probabilities = probabilities_from_outputs(outputs)
     mask_probabilities = probabilities[0].copy().reshape(-1)
