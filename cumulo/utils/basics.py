@@ -28,5 +28,5 @@ def include_cloud_mask(labels, cloud_mask):
 
 def probabilities_from_outputs(outputs):
     outputs[0, ...] = ss.expit(outputs[0, ...])  # first channel was trained for cloud mask
-    outputs[1:9, ...] = ss.softmax(outputs[1:, ...], axis=0)  # next 8 channels were trained for cloud classes
+    outputs[1:9, ...] = ss.softmax(outputs[1:9, ...], axis=0)  # next 8 channels were trained for cloud classes
     return outputs

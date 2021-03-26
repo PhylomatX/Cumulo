@@ -68,6 +68,8 @@ def main(_):
         os.makedirs(FLAGS.output_path)
     with open(os.path.join(FLAGS.output_path, 'eval_flagfile.txt'), 'w') as f:
         f.writelines(FLAGS.flags_into_string())
+    if not os.path.exists(os.path.join(FLAGS.output_path, 'total')):
+        os.makedirs(os.path.join(FLAGS.output_path, 'total'))
 
     if FLAGS.local_norm:
         normalizer = LocalNormalizer()
@@ -119,7 +121,7 @@ def main(_):
             report, probabilities, cloudy_labels = evaluate_file(filename, outputs.copy(), labels.copy(), cloud_mask.copy(), label_names, mask_names)
             # --- Save intermediate report and merge probabilities and labels for total evaluation ---
             total_report += report
-            with open(os.path.join(FLAGS.output_path, 'report.txt'), 'w') as f:
+            with open(os.path.join(FLAGS.output_path, 'total/report.txt'), 'w') as f:
                 f.write(total_report)
             total_labels = np.append(total_labels, cloudy_labels)
             if total_probabilities is None:
@@ -136,13 +138,11 @@ def main(_):
         # --- Generate total evaluation and save final report ---
         print('Performing total evaluation...')
         total_report += '#### TOTAL ####\n\n'
-        if not os.path.exists(os.path.join(FLAGS.output_path, 'total')):
-            os.makedirs(os.path.join(FLAGS.output_path, 'total'))
         total_file = os.path.join(FLAGS.output_path, 'total/total.npz')
         report, matrix = evaluate_clouds(total_probabilities, total_labels, label_names, total_file, detailed=True)
         total_report += 'Cloud class eval:\n\n' + report + '\n\n'
         total_report += matrix
-        with open(os.path.join(FLAGS.output_path, 'report.txt'), 'w') as f:
+        with open(os.path.join(FLAGS.output_path, 'total/report.txt'), 'w') as f:
             f.write(total_report)
 
 
