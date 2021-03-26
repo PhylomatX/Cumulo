@@ -116,16 +116,18 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file):
     hard_cloudy_predictions = np.argmax(cloudy_probabilities, 0).reshape(-1)
 
     report = sm.classification_report(cloudy_labels, hard_cloudy_predictions, labels=label_names, zero_division=0)
-    matrix = sm.confusion_matrix(cloudy_labels, hard_cloudy_predictions)
-    matrix = write_confusion_matrix(matrix, get_target_names(cloudy_labels, hard_cloudy_predictions, label_names))
+    matrix = sm.confusion_matrix(cloudy_labels, hard_cloudy_predictions, labels=label_names)
     class_matrix_disp = sm.ConfusionMatrixDisplay(matrix, display_labels=label_names)
     class_matrix_disp.plot(cmap='Reds')
     plt.savefig(npz_file.replace('.npz', '_matrix.png'))
+    plt.close()
+    matrix = write_confusion_matrix(matrix, get_target_names(cloudy_labels, hard_cloudy_predictions, label_names))
 
-    class_matrix_normalized = sm.confusion_matrix(cloudy_labels, hard_cloudy_predictions, normalize='true')
+    class_matrix_normalized = sm.confusion_matrix(cloudy_labels, hard_cloudy_predictions, normalize='true', labels=label_names)
     class_matrix_disp = sm.ConfusionMatrixDisplay(class_matrix_normalized, display_labels=label_names)
     class_matrix_disp.plot(include_values=False, cmap='Reds')
     plt.savefig(npz_file.replace('.npz', '_matrix_normalized.png'))
+    plt.close()
 
     histogram_predictions = []
     for ix in range(len(label_names)):
@@ -158,10 +160,11 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file):
 def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names):
     labels = labels.reshape(-1)
     cloud_mask = cloud_mask.reshape(-1)
-    cloudy_labels = labels[cloud_mask == 1]
+    cloudy_labels_mask = np.logical_and(cloud_mask == 0, labels != -1)
+    cloudy_labels = labels[cloudy_labels_mask]
     probabilities = probabilities_from_outputs(outputs)
     mask_probabilities = probabilities[0].copy().reshape(-1)
-    cloudy_class_probabilities = probabilities[1:9].reshape(8, -1)[:, cloud_mask == 1]
+    cloudy_class_probabilities = probabilities[1:9].reshape(8, -1)[:, cloudy_labels_mask]
 
     # --- Generate file-wise evaluation ---
     report = f"#### {file} ####\n\n"

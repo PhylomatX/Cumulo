@@ -11,7 +11,7 @@ def main(_):
         print(file)
         file = os.path.join(FLAGS.path, file)
         data = np.load(file)
-        outputs_to_figure_or_file(data['prediction'], data['labels'], data['cloud_mask'], FLAGS.use_continuous_colors,
+        outputs_to_figure_or_file(data['outputs'], data['labels'], data['cloud_mask'], FLAGS.use_continuous_colors,
                                   FLAGS.cloud_mask_as_binary, FLAGS.to_file, file, FLAGS.label_dilation)
 
 

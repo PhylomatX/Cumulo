@@ -39,11 +39,11 @@ def main(_):
         if total_probabilities is None:
             total_probabilities = probabilities
         else:
-            total_probabilities = np.vstack(total_probabilities, probabilities)
+            total_probabilities = np.hstack((total_probabilities, probabilities))
 
     # --- Generate total evaluation and save final report ---
     total_report += '#### TOTAL ####\n\n'
-    total_file = os.path.join(FLAGS.output_path, 'total.npz')
+    total_file = os.path.join(output_path, 'total.npz')
     report, matrix = evaluate_clouds(total_probabilities, total_labels, label_names, total_file)
     total_report += 'Cloud class eval:\n\n' + report + '\n\n'
     total_report += matrix
