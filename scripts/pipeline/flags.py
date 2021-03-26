@@ -7,6 +7,10 @@ flags.DEFINE_bool('raw_predictions', False, help='')
 flags.DEFINE_string('output_path', None, help='Path to folder where output should get saved')
 flags.DEFINE_integer('prediction_number', None, help='Number of files for which predictions should get generated')
 flags.DEFINE_bool('immediate_evaluation', True, help='Do not save predictions, but evaluate them immediately and save images and reports to file')
+flags.DEFINE_boolean('use_continuous_colors', True, help='Use predictions for color weighting')
+flags.DEFINE_boolean('cloud_mask_as_binary', True, help='Make cloud mask binary')
+flags.DEFINE_boolean('to_file', True, help='Save examples as images')
+flags.DEFINE_integer('label_dilation', 10, help='Size of label dilation')
 
 # --- train ---
 flags.DEFINE_string('d_path', '/storage/group/dataset_mirrors/01_incoming/satellite/Cumulo/unprocessed/nc/clean/', help='Data path')

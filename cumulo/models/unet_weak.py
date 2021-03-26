@@ -57,7 +57,7 @@ class UpconvConcat(nn.Module):
             out_channels (int): output channel
         """
         super(UpconvConcat, self).__init__()
-        self.upconv = nn.Upsample(mode='bilinear', scale_factor=2)
+        self.upconv = nn.Upsample(mode='bilinear', scale_factor=2, align_corners=False)
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         self.conv2 = ConvConv(in_channels, out_channels, norm, padding=padding)
 

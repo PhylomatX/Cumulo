@@ -44,7 +44,7 @@ def main(_):
     # --- Generate total evaluation and save final report ---
     total_report += '#### TOTAL ####\n\n'
     total_file = os.path.join(output_path, 'total.npz')
-    report, matrix = evaluate_clouds(total_probabilities, total_labels, label_names, total_file)
+    report, matrix = evaluate_clouds(total_probabilities, total_labels, label_names, total_file, detailed=True)
     total_report += 'Cloud class eval:\n\n' + report + '\n\n'
     total_report += matrix
     with open(os.path.join(output_path, 'report.txt'), 'w') as f:

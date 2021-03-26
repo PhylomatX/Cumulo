@@ -68,8 +68,8 @@ def get_target_names(gtl: np.ndarray, hcl: np.ndarray, targets: list) -> list:
     return list(targets[total])
 
 
-def create_histogram(class_predictions, file):
-    for class_prediction in class_predictions:
+def create_histogram(class_predictions, file, labels):
+    for ix, class_prediction in enumerate(class_predictions):
         # --- determine bin number with Freedman-Diaconis rule ---
         n = len(class_prediction)
         sorted_cloudy = np.sort(class_prediction)
@@ -77,84 +77,88 @@ def create_histogram(class_predictions, file):
         q3 = np.median(sorted_cloudy[-int(n / 2):])
         bin_width = 2 * (q3 - q1) / np.cbrt(n)
         bin_num = int(1 / bin_width)
-        cloudy_n, _, _ = plt.hist(class_prediction, density=True, bins=bin_num, histtype='step')
+        cloudy_n, _, _ = plt.hist(class_prediction, density=True, bins=bin_num, histtype='step', label=labels[ix])
 
     plt.xlabel('Network output after softmax')
     plt.ylabel('Normalized counts')
+    plt.legend()
     plt.tight_layout()
     plt.savefig(file)
     plt.close()
 
 
-def evaluate_cloud_mask(mask_predictions, mask, mask_names, npz_file):
+def evaluate_cloud_mask(mask_predictions, mask, mask_names, npz_file, detailed=False):
     mask_predictions = mask_predictions.reshape(-1)
     hard_mask_predictions = mask_predictions.copy()
     hard_mask_predictions[mask_predictions < 0.5] = 0
     hard_mask_predictions[mask_predictions >= 0.5] = 1
     report = sm.classification_report(mask, hard_mask_predictions, labels=mask_names)
 
-    fpr, tpr, _ = sm.roc_curve(mask, mask_predictions)
-    auc = sm.auc(fpr, tpr)
-    mask_roc_disp = sm.RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
-    mask_roc_disp.plot()
-    plt.savefig(npz_file.replace('.npz', '_mask_roc.png'))
-    plt.close()
+    if detailed:
+        fpr, tpr, _ = sm.roc_curve(mask, mask_predictions)
+        auc = sm.auc(fpr, tpr)
+        mask_roc_disp = sm.RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
+        mask_roc_disp.plot()
+        plt.savefig(npz_file.replace('.npz', '_mask_roc.png'))
+        plt.close()
 
-    precision, recall, _ = sm.precision_recall_curve(mask, mask_predictions)
-    mask_pr_disp = sm.PrecisionRecallDisplay(precision=precision, recall=recall)
-    mask_pr_disp.plot()
-    plt.savefig(npz_file.replace('.npz', '_mask_pr.png'))
-    plt.close()
+        precision, recall, _ = sm.precision_recall_curve(mask, mask_predictions)
+        mask_pr_disp = sm.PrecisionRecallDisplay(precision=precision, recall=recall)
+        mask_pr_disp.plot()
+        plt.savefig(npz_file.replace('.npz', '_mask_pr.png'))
+        plt.close()
 
-    cloudy = mask_predictions[mask == 1]
-    not_cloudy = mask_predictions[mask == 0]
-    create_histogram([cloudy, not_cloudy], npz_file.replace('.npz', f'_mask_hist.png'))
+        cloudy = mask_predictions[mask == 1]
+        not_cloudy = mask_predictions[mask == 0]
+        create_histogram([cloudy, not_cloudy], npz_file.replace('.npz', f'_mask_hist.png'), ['cloud', 'no cloud'])
     return report
 
 
-def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file):
+def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file, detailed=False):
     hard_cloudy_predictions = np.argmax(cloudy_probabilities, 0).reshape(-1)
 
     report = sm.classification_report(cloudy_labels, hard_cloudy_predictions, labels=label_names, zero_division=0)
     matrix = sm.confusion_matrix(cloudy_labels, hard_cloudy_predictions, labels=label_names)
-    class_matrix_disp = sm.ConfusionMatrixDisplay(matrix, display_labels=label_names)
-    class_matrix_disp.plot(cmap='Reds')
-    plt.savefig(npz_file.replace('.npz', '_matrix.png'))
-    plt.close()
-    matrix = write_confusion_matrix(matrix, get_target_names(cloudy_labels, hard_cloudy_predictions, label_names))
+    matrix_string = write_confusion_matrix(matrix, get_target_names(cloudy_labels, hard_cloudy_predictions, label_names))
 
-    class_matrix_normalized = sm.confusion_matrix(cloudy_labels, hard_cloudy_predictions, normalize='true', labels=label_names)
-    class_matrix_disp = sm.ConfusionMatrixDisplay(class_matrix_normalized, display_labels=label_names)
-    class_matrix_disp.plot(include_values=False, cmap='Reds')
-    plt.savefig(npz_file.replace('.npz', '_matrix_normalized.png'))
-    plt.close()
-
-    histogram_predictions = []
-    for ix in range(len(label_names)):
-        if np.all(cloudy_labels != ix):
-            continue
-        ix_labels = np.zeros_like(cloudy_labels)
-        ix_labels[cloudy_labels == ix] = 1
-        ix_predictions = cloudy_probabilities[ix].reshape(-1)
-        histogram_predictions.append(ix_predictions)
-
-        fpr, tpr, _ = sm.roc_curve(ix_labels, ix_predictions)
-        auc = sm.auc(fpr, tpr)
-        mask_roc_disp = sm.RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
-        mask_roc_disp.plot()
-        plt.savefig(npz_file.replace('.npz', f'_{label_names[ix]}_roc.png'))
+    if detailed:
+        class_matrix_disp = sm.ConfusionMatrixDisplay(matrix, display_labels=label_names)
+        class_matrix_disp.plot(cmap='Reds')
+        plt.savefig(npz_file.replace('.npz', '_matrix.png'))
         plt.close()
 
-        precision, recall, _ = sm.precision_recall_curve(ix_labels, ix_predictions)
-        mask_pr_disp = sm.PrecisionRecallDisplay(precision=precision, recall=recall)
-        mask_pr_disp.plot()
-        plt.savefig(npz_file.replace('.npz', f'_{label_names[ix]}_pr.png'))
+        class_matrix_normalized = sm.confusion_matrix(cloudy_labels, hard_cloudy_predictions, normalize='true', labels=label_names)
+        class_matrix_disp = sm.ConfusionMatrixDisplay(class_matrix_normalized, display_labels=label_names)
+        class_matrix_disp.plot(include_values=False, cmap='Reds')
+        plt.savefig(npz_file.replace('.npz', '_matrix_normalized.png'))
         plt.close()
 
-        create_histogram([ix_predictions[ix_labels.astype(bool)], ix_predictions[~ix_labels.astype(bool)]],
-                         npz_file.replace('.npz', f'_{label_names[ix]}_hist.png'))
-    create_histogram(histogram_predictions, npz_file.replace('.npz', f'_predictions_hist.png'))
-    return report, matrix
+        histogram_predictions = []
+        for ix in range(len(label_names)):
+            if np.all(cloudy_labels != ix):
+                continue
+            ix_labels = np.zeros_like(cloudy_labels)
+            ix_labels[cloudy_labels == ix] = 1
+            ix_predictions = cloudy_probabilities[ix].reshape(-1)
+            histogram_predictions.append(ix_predictions)
+
+            fpr, tpr, _ = sm.roc_curve(ix_labels, ix_predictions)
+            auc = sm.auc(fpr, tpr)
+            mask_roc_disp = sm.RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
+            mask_roc_disp.plot()
+            plt.savefig(npz_file.replace('.npz', f'_{label_names[ix]}_roc.png'))
+            plt.close()
+
+            precision, recall, _ = sm.precision_recall_curve(ix_labels, ix_predictions)
+            mask_pr_disp = sm.PrecisionRecallDisplay(precision=precision, recall=recall)
+            mask_pr_disp.plot()
+            plt.savefig(npz_file.replace('.npz', f'_{label_names[ix]}_pr.png'))
+            plt.close()
+
+            create_histogram([ix_predictions[ix_labels.astype(bool)], ix_predictions[~ix_labels.astype(bool)]],
+                             npz_file.replace('.npz', f'_{label_names[ix]}_hist.png'), ['True', 'False'])
+        create_histogram(histogram_predictions, npz_file.replace('.npz', f'_predictions_hist.png'), label_names)
+    return report, matrix_string
 
 
 def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names):

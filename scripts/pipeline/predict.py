@@ -13,14 +13,14 @@ from cumulo.models.unet_equi import UNet_equi
 from absl import app
 from flags import FLAGS
 
-# add arg of form --flagfile 'PATH_TO_FLAGFILE' at the beginning and add --o_path and --pred_num
+# add arg of form --flagfile 'PATH_TO_FLAGFILE' at the beginning and add --output_path and --prediction_number
 
 
 def load_model(model_dir):
     if FLAGS.model == 'weak':
-        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding)
+        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
-        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, rot=FLAGS.rot)
+        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
     else:
         raise ValueError('Model type not known.')
     model_path = os.path.join(model_dir, FLAGS.model_name)
@@ -112,17 +112,20 @@ def main(_):
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
         if FLAGS.immediate_evaluation:
-            filename = filename.replace(FLAGS.d_path, FLAGS.output_path + '/').replace('.nc', '.npz')
-            report, probabilities, labels = evaluate_file(filename, outputs, labels, cloud_mask, label_names, mask_names)
+            pure_filename = filename.replace(FLAGS.d_path, '').replace('.nc', '')
+            if not os.path.exists(os.path.join(FLAGS.output_path, pure_filename)):
+                os.makedirs(os.path.join(FLAGS.output_path, pure_filename))
+            filename = filename.replace(FLAGS.d_path, FLAGS.output_path + f'/{pure_filename}/').replace('.nc', '.npz')
+            report, probabilities, cloudy_labels = evaluate_file(filename, outputs.copy(), labels.copy(), cloud_mask.copy(), label_names, mask_names)
             # --- Save intermediate report and merge probabilities and labels for total evaluation ---
             total_report += report
             with open(os.path.join(FLAGS.output_path, 'report.txt'), 'w') as f:
                 f.write(total_report)
-            total_labels = np.append(total_labels, labels)
+            total_labels = np.append(total_labels, cloudy_labels)
             if total_probabilities is None:
                 total_probabilities = probabilities
             else:
-                total_probabilities = np.vstack(total_probabilities, probabilities)
+                total_probabilities = np.hstack((total_probabilities, probabilities))
             outputs_to_figure_or_file(outputs, labels, cloud_mask, FLAGS.use_continuous_colors,
                                       FLAGS.cloud_mask_as_binary, FLAGS.to_file, filename)
         else:
@@ -131,9 +134,12 @@ def main(_):
 
     if FLAGS.immediate_evaluation:
         # --- Generate total evaluation and save final report ---
+        print('Performing total evaluation...')
         total_report += '#### TOTAL ####\n\n'
-        total_file = os.path.join(FLAGS.output_path, 'total.npz')
-        report, matrix = evaluate_clouds(total_probabilities, total_labels, label_names, total_file)
+        if not os.path.exists(os.path.join(FLAGS.output_path, 'total')):
+            os.makedirs(os.path.join(FLAGS.output_path, 'total'))
+        total_file = os.path.join(FLAGS.output_path, 'total/total.npz')
+        report, matrix = evaluate_clouds(total_probabilities, total_labels, label_names, total_file, detailed=True)
         total_report += 'Cloud class eval:\n\n' + report + '\n\n'
         total_report += matrix
         with open(os.path.join(FLAGS.output_path, 'report.txt'), 'w') as f:

@@ -71,14 +71,15 @@ def prediction_to_figure(prediction, ground_truth, cloud_mask_as_binary=True):
     return fig
 
 
-def prediction_to_file(npz_file, rgb_predictions, rgb_ground_truth, rgb_labels, cloud_mask_as_binary=True):
-    imageio.imwrite(npz_file.replace('.npz', '_classpred.png'), (rgb_predictions * 255).astype(np.uint8))
+def prediction_to_file(npz_file, rgb_predictions_continuous, rgb_predictions_discrete, rgb_ground_truth, rgb_labels, cloud_mask_as_binary=True):
+    imageio.imwrite(npz_file.replace('.npz', '_classpred_continuous.png'), (rgb_predictions_continuous * 255).astype(np.uint8))
+    imageio.imwrite(npz_file.replace('.npz', '_classpred_discrete.png'), (rgb_predictions_discrete * 255).astype(np.uint8))
     imageio.imwrite(npz_file.replace('.npz', '_gt.png'), (rgb_ground_truth * 255).astype(np.uint8))
     # --- project labeled pixels into predictions ---
-    rgb_predictions_cache = rgb_predictions.copy()
+    rgb_predictions_cache = rgb_predictions_discrete.copy()
     label_mask = np.all(rgb_labels != NO_LABEL, -1)
-    rgb_predictions[label_mask, :] = rgb_labels[label_mask, :]
-    imageio.imwrite(npz_file.replace('.npz', '_classpred_labels.png'), (rgb_predictions * 255).astype(np.uint8))
+    rgb_predictions_discrete[label_mask, :] = rgb_labels[label_mask, :]
+    imageio.imwrite(npz_file.replace('.npz', '_classpred_labels.png'), (rgb_predictions_discrete * 255).astype(np.uint8))
     # --- save binary cloud mask prediction ---
     if cloud_mask_as_binary:
         rgb_predictions = rgb_predictions_cache
@@ -89,10 +90,8 @@ def prediction_to_file(npz_file, rgb_predictions, rgb_ground_truth, rgb_labels, 
 def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors=True, cloud_mask_as_binary=True,
                               to_file=True, npz_file='', label_dilation=10, border_dilation=2):
     prediction = probabilities_from_outputs(outputs)
-    if use_continuous_colors:
-        rgb_prediction = prediction_to_continuous_rgb(prediction, cloud_mask_as_binary)
-    else:
-        rgb_prediction = prediction_to_discrete_rgb(prediction)
+    rgb_prediction_continuous = prediction_to_continuous_rgb(prediction, cloud_mask_as_binary)
+    rgb_prediction_discrete = prediction_to_discrete_rgb(prediction)
 
     # --- dilate labeled pixels for better visualization ---
     labels_cache = labels
@@ -110,8 +109,8 @@ def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors
     rgb_ground_truth = labels_and_cloud_mask_to_rgb(labels, cloud_mask)
 
     if to_file:
-        prediction_to_file(npz_file, rgb_prediction, rgb_ground_truth, rgb_labels, cloud_mask_as_binary)
+        prediction_to_file(npz_file, rgb_prediction_continuous, rgb_prediction_discrete, rgb_ground_truth, rgb_labels, cloud_mask_as_binary)
     else:
-        prediction_to_figure(rgb_prediction, rgb_ground_truth, cloud_mask_as_binary)
+        prediction_to_figure(rgb_prediction_continuous, rgb_ground_truth, cloud_mask_as_binary)
         plt.show()
         plt.close()
