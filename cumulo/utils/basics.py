@@ -9,15 +9,38 @@ cloud_mask_nc = 'cloud_mask'
 labels_nc = 'cloud_layer_type'
 
 
-def read_nc(nc_file):
+def read_nc(nc_file, filter_most_freqent=False):
     file = nc4.Dataset(nc_file, 'r', format='NETCDF4')
     radiances = np.vstack([file.variables[name][:] for name in radiances_nc])
     cloud_mask = file.variables[cloud_mask_nc][:]
     labels = file.variables[labels_nc][:]
     labels = labels.data[0]
-    labels = labels[..., 0]  # take lowest clouds as GT
+    if filter_most_freqent:
+        labels = get_most_frequent_label(labels)  # take most frequent clouds of each pixel as GT
+    else:
+        labels = labels[..., 0]  # take lowest clouds as GT
     file.close()
     return radiances.data, cloud_mask.data[0], labels
+
+
+def get_most_frequent_label(labels):
+    labels = labels
+    mask = np.any(labels != -1, axis=2)
+    labeled_pixels = labels[mask]
+    result_pixels = np.zeros(len(labeled_pixels))
+
+    for ix, labeled_pixel in enumerate(labeled_pixels):
+        occ = np.zeros(8)
+        uniques, counts = np.unique(labeled_pixel, return_counts=True)
+        for v, c in zip(uniques, counts):
+            if v != -1:
+                occ[v] = c
+        result_pixels[ix] = np.argmax(occ)
+
+    labels_flat = np.ones_like(labels[..., 0]) * -1
+    labels_flat[mask] = result_pixels
+
+    return labels_flat
 
 
 def include_cloud_mask(labels, cloud_mask):

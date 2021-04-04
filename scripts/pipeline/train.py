@@ -43,10 +43,10 @@ def main(_):
     m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
     std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
-    # custom_class_weights = np.ones_like(class_weights)
-    # custom_class_weights[3] *= 10
+    custom_class_weights = np.ones_like(class_weights)
+    custom_class_weights[3] *= 20
     # custom_class_weights[4] /= 10
-    # class_weights *= custom_class_weights
+    class_weights *= custom_class_weights
 
     if FLAGS.local_norm:
         print("Using local normalization.")
@@ -74,13 +74,14 @@ def main(_):
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
                                   tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
-                                  valid_convolution_offset=FLAGS.valid_convolution_offset)
+                                  valid_convolution_offset=FLAGS.valid_convolution_offset, most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT)
 
     if FLAGS.val:
         print("Training with validation!")
         val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
                                     tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
-                                    valid_convolution_offset=FLAGS.valid_convolution_offset)
+                                    valid_convolution_offset=FLAGS.valid_convolution_offset,
+                                    most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT)
         datasets = {'train': train_dataset, 'val': val_dataset}
     else:
         print("Training without validation!")
@@ -121,7 +122,7 @@ def main(_):
             cycle_momentum=True if 'momentum' in optimizer.defaults else False
         )
 
-    mask_loss = nn.BCEWithLogitsLoss()
+    bce = nn.BCEWithLogitsLoss()
     class_loss = nn.CrossEntropyLoss(weight=class_weights.to(device))
     auto_loss = nn.MSELoss()
 
@@ -133,10 +134,10 @@ def main(_):
     shutil.make_archive(backup_path, 'gztar', pkg_path)
 
     # Start training
-    train(model, FLAGS.m_path, datasets, mask_loss, class_loss, auto_loss, optimizer, lr_sched, num_epochs=nb_epochs, device=device)
+    train(model, FLAGS.m_path, datasets, bce, class_loss, auto_loss, optimizer, lr_sched, num_epochs=nb_epochs, device=device)
 
 
-def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, optimizer, scheduler, num_epochs=1000, device='cuda'):
+def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimizer, scheduler, num_epochs=1000, device='cuda'):
     best_acc = 0.0
     best_loss = None
     offset = FLAGS.valid_convolution_offset
@@ -198,13 +199,20 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
                         b_cloud_mask = cloud_mask[ix]
                         b_outputs = outputs[ix][1:9][b_labeled_mask].reshape(8, -1).transpose(0, 1)
 
-                        mask_loss = FLAGS.mask_weight * mask_loss_fn(outputs[ix][0], b_cloud_mask.float())  # BCEWithLogitsLoss for cloud mask
+                        mask_loss = FLAGS.mask_weight * bce_fn(outputs[ix][0], b_cloud_mask.float())  # BCEWithLogitsLoss for cloud mask
                         class_loss = FLAGS.class_weight * class_loss_fn(b_outputs, b_labels.long())  # CrossEntropy for labels
+
+                        specific_class_weight = 5
+                        specific_class_labels = b_labels.clone()
+                        specific_class_labels[b_labels != 3] = 0
+                        specific_class_labels[b_labels == 3] = 1
+                        specific_class_loss = specific_class_weight * bce_fn(outputs[ix][9][b_labeled_mask[0]], specific_class_labels.float())
+
                         auto_loss, auto_weight = 0, 0
-                        if FLAGS.nb_classes > 9:
+                        if FLAGS.auto_weight > 0:
                             auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][9:].float(), radiances[ix][:(FLAGS.nb_classes - 9)].float())  # MSE for autoencoder loss
                             auto_weight = FLAGS.auto_weight
-                        loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + auto_weight)
+                        loss += (mask_loss + class_loss + auto_loss + specific_class_loss) / (FLAGS.mask_weight + FLAGS.class_weight + auto_weight + specific_class_weight)
                     loss /= labeled_mask.shape[0]
 
                     if phase == 'train':
@@ -223,23 +231,31 @@ def train(model, m_path, datasets, mask_loss_fn, class_loss_fn, auto_loss_fn, op
                                  labels=labels[0], outputs=outputs[0, ...],
                                  cloud_mask=cloud_mask[0])
 
+                labeled_mask = labels != -1
                 mask_prediction = outputs[:, 0, ...]
                 mask_prediction[mask_prediction < 0.5] = 0
                 mask_prediction[mask_prediction >= 0.5] = 1
                 class_prediction = np.argmax(outputs[:, 1:9, ...], axis=1)
-                labeled_mask = labels != -1
+                specific_class_prediction = outputs[:, 9, ...]
+                specific_class_prediction[specific_class_prediction < 0.5] = 0
+                specific_class_prediction[specific_class_prediction >= 0.5] = 1
+                specific_class_labels = labels.copy()
+                specific_class_labels[specific_class_labels != 3] = 0
+                specific_class_labels[specific_class_labels == 3] = 1
 
                 # statistics
                 running_loss += loss.item()
                 mask_accuracy = float(np.sum(mask_prediction.reshape(-1) == cloud_mask.reshape(-1)) / cloud_mask.reshape(-1).shape[0])
                 class_accuracy = float(np.sum(class_prediction[labeled_mask] == labels[labeled_mask]) / labels[labeled_mask].shape[0])
-                accuracy = (mask_accuracy + 2 * class_accuracy) / 3
+                specific_class_accuracy = float(np.sum(specific_class_prediction[labeled_mask] == specific_class_labels[labeled_mask]) / specific_class_labels[labeled_mask].shape[0])
+                accuracy = (FLAGS.mask_weight * mask_accuracy + FLAGS.class_weight * class_accuracy) / (FLAGS.mask_weight + FLAGS.class_weight)
                 running_accuracy += accuracy
 
                 print(f"Epoch: {epoch} "
                       f"- Loss: {round(running_loss / (sample_ix + 1), 3)} "
                       f"- Class accuracy: {round(class_accuracy, 3)} "
-                      f"- Mask accuracy: {round(mask_accuracy, 3)} - {FLAGS.m_path}")
+                      f"- Mask accuracy: {round(mask_accuracy, 3)} "
+                      f"- Specific class accuracy: {round(specific_class_accuracy, 3)} - {FLAGS.m_path}")
 
                 with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
                     pkl.dump(metrics, f)

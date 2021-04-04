@@ -98,6 +98,8 @@ class UNet_equi(nn.Module):
         X = self.conv_out(X)
         out = self.gpool(X)
 
-        # 256 => 164 (offset: 46)
+        # 256 => 164 (offset: 46) with 3 layers
+        # 256 => 216 (offset: 20) with 2 layers
+        # 256 => 240 (offset: 8) with 1 layer
 
         return out.tensor

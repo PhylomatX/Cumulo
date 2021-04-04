@@ -31,6 +31,7 @@ flags.DEFINE_string('norm', 'none', help='Type of normalization, one of [bn, gn,
 flags.DEFINE_bool('merged', True, help='Flag for indicating use of merged dataset')
 flags.DEFINE_bool('examples', True, help='Save some training examples in each epoch')
 flags.DEFINE_bool('local_norm', False, help='Standardize each image channel-wise. If False the statistics of a data subset will be used.')
+flags.DEFINE_bool('most_frequent_clouds_as_GT', False, help='Reduce the cloud type GT to the most frequent cloud type of all pixels. If False, the lowest cloud type is taken.')
 flags.DEFINE_integer('analysis_freq', 1, help='Validation and example save frequency')
 flags.DEFINE_integer('rot', 2, help='Number of elements in rotation group')
 flags.DEFINE_integer('offset', 46, help='Cropping offset for labels in case of valid convolutions')
@@ -38,7 +39,7 @@ flags.DEFINE_integer('valid_convolution_offset', 46, help='Cropping offset for l
 flags.DEFINE_integer('padding', 0, help='Padding for convolutions')
 flags.DEFINE_integer('class_weight', 2, help='Weight of class loss')
 flags.DEFINE_integer('mask_weight', 1, help='Weight of mask loss')
-flags.DEFINE_integer('auto_weight', 1, help='Weight of auto loss')
+flags.DEFINE_integer('auto_weight', 0, help='Weight of auto loss')
 flags.DEFINE_float('augment_prob', 0.5, help='Augmentation probability')
 flags.DEFINE_float('rotation_probability', 0.5, help='Augmentation probability')
 

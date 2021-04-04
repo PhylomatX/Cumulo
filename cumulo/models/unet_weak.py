@@ -15,7 +15,7 @@ class ConvConv(nn.Module):
         super(ConvConv, self).__init__()
 
         if norm == 'bn':
-            norms = [nn.BatchNorm2d(out_channels, track_running_stats=False), nn.BatchNorm2d(out_channels, track_running_stats=False)]
+            norms = [nn.BatchNorm2d(out_channels, momentum=0.01), nn.BatchNorm2d(out_channels, momentum=0.01)]
         elif norm == 'gn':
             norms = [nn.GroupNorm(int(0.5 * out_channels), out_channels), nn.GroupNorm(int(0.5 * out_channels), out_channels)]
         else:

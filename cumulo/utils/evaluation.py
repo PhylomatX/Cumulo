@@ -1,9 +1,9 @@
 import numpy as np
 import matplotlib
+import pickle as pkl
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from sklearn import metrics as sm
-
 from cumulo.utils.basics import probabilities_from_outputs
 
 
@@ -122,6 +122,12 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file, 
     matrix_string = write_confusion_matrix(matrix, get_target_names(cloudy_labels, hard_cloudy_predictions, label_names))
 
     if detailed:
+        report_dict = sm.classification_report(cloudy_labels, hard_cloudy_predictions, labels=label_names, zero_division=0, output_dict=True)
+        with open(npz_file.replace('.npz', '_report.pkl'), 'wb') as f:
+            pkl.dump(report_dict, f)
+        with open(npz_file.replace('.npz', '_matrix.pkl'), 'wb') as f:
+            pkl.dump(matrix, f)
+
         class_matrix_disp = sm.ConfusionMatrixDisplay(matrix, display_labels=label_names)
         class_matrix_disp.plot(cmap='Reds')
         plt.savefig(npz_file.replace('.npz', '_matrix.png'))
@@ -140,31 +146,47 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file, 
             ix_labels = np.zeros_like(cloudy_labels)
             ix_labels[cloudy_labels == ix] = 1
             ix_predictions = cloudy_probabilities[ix].reshape(-1)
-            histogram_predictions.append(ix_predictions)
+
+            # create_histogram([ix_predictions[ix_labels.astype(bool)], ix_predictions[~ix_labels.astype(bool)]],
+            #                  npz_file.replace('.npz', f'_{label_names[ix]}_hist.png'), ['True', 'False'])
 
             fpr, tpr, _ = sm.roc_curve(ix_labels, ix_predictions)
             auc = sm.auc(fpr, tpr)
-            mask_roc_disp = sm.RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
-            mask_roc_disp.plot()
-            plt.savefig(npz_file.replace('.npz', f'_{label_names[ix]}_roc.png'))
-            plt.close()
+            plt.plot(fpr, tpr, label=f'{label_names[ix]} - AUC: {round(auc, 2)}')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.xlim((-0.1, 1.1))
+        plt.ylim((-0.1, 1.1))
+        plt.legend()
+        plt.savefig(npz_file.replace('.npz', f'_roc.pdf'))
+        plt.close()
+
+        for ix in range(len(label_names)):
+            if np.all(cloudy_labels != ix):
+                continue
+            ix_labels = np.zeros_like(cloudy_labels)
+            ix_labels[cloudy_labels == ix] = 1
+            ix_predictions = cloudy_probabilities[ix].reshape(-1)
+            histogram_predictions.append(ix_predictions)
 
             precision, recall, _ = sm.precision_recall_curve(ix_labels, ix_predictions)
-            mask_pr_disp = sm.PrecisionRecallDisplay(precision=precision, recall=recall)
-            mask_pr_disp.plot()
-            plt.savefig(npz_file.replace('.npz', f'_{label_names[ix]}_pr.png'))
-            plt.close()
+            plt.plot(recall, precision, label=label_names[ix])
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.xlim((-0.1, 1.1))
+        plt.ylim((-0.1, 1.1))
+        plt.legend()
+        plt.savefig(npz_file.replace('.npz', f'_pr.pdf'))
+        plt.close()
 
-            create_histogram([ix_predictions[ix_labels.astype(bool)], ix_predictions[~ix_labels.astype(bool)]],
-                             npz_file.replace('.npz', f'_{label_names[ix]}_hist.png'), ['True', 'False'])
-        create_histogram(histogram_predictions, npz_file.replace('.npz', f'_predictions_hist.png'), label_names)
+        # create_histogram(histogram_predictions, npz_file.replace('.npz', f'_predictions_hist.png'), label_names)
     return report, matrix_string
 
 
 def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names):
     labels = labels.reshape(-1)
     cloud_mask = cloud_mask.reshape(-1)
-    cloudy_labels_mask = np.logical_and(cloud_mask == 1, labels != -1)  # use only cloudy labels for evaluation
+    cloudy_labels_mask = labels != -1  # use all existing labels (also non-cloudy ones)
     cloudy_labels = labels[cloudy_labels_mask]
     probabilities = probabilities_from_outputs(outputs)
     mask_probabilities = probabilities[0].copy().reshape(-1)
