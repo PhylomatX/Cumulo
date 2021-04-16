@@ -2,11 +2,12 @@ import os
 from absl import app
 from absl import flags
 import numpy as np
+import pickle as pkl
 from tqdm import tqdm
-from cumulo.utils.utils import read_nc, get_sampling_mask
+from cumulo.utils.basics import read_nc
 
 flags.DEFINE_string('nc_path', None, help='Directory where nc files are located.')
-flags.DEFINE_integer('size', 128, help='Tile size.')
+flags.DEFINE_string('removed_path', None, help='Directory where removed nc files should get saved.')
 FLAGS = flags.FLAGS
 
 MAX_WIDTH, MAX_HEIGHT = 1354, 2030
@@ -31,42 +32,26 @@ def check_for_stripe_pattern(radiances) -> bool:
     return erroneous
 
 
-def check_for_empty_labels(tile_size, labels):
-    allowed_pixels = get_sampling_mask((MAX_WIDTH, MAX_HEIGHT), tile_size)
-    label_mask = get_label_mask(labels)
-    potential_pixels = allowed_pixels & label_mask
-    potential_pixels_idx = np.array(list(zip(*np.where(potential_pixels == 1))))
-
-    if len(potential_pixels_idx) == 0:
-        print('No labels!')
-        return True
-    else:
-        return False
-
-
 def main(_):
     files = os.listdir(FLAGS.nc_path)
-    artefacts = []
     no_labels = []
-    clean = os.path.join(FLAGS.nc_path, 'clean')
-    if not os.path.exists(clean):
-        os.makedirs(clean)
+    removed = 0
     for file in tqdm(files):
         filename = os.path.join(FLAGS.nc_path, file)
         try:
-            radiances, properties, cloud_mask, labels = read_nc(filename)
+            radiances, cloud_mask, labels = read_nc(filename)
         except:
             print('Invalid file')
             continue
         if check_size(radiances) or check_for_stripe_pattern(radiances):
-            os.rename(filename, filename.replace(FLAGS.nc_path, artefacts + '/'))
+            os.rename(filename, filename.replace(FLAGS.nc_path, FLAGS.removed_path))
             removed += 1
-        elif check_for_empty_labels(FLAGS.size, labels):
-            os.rename(filename, filename.replace(FLAGS.nc_path, no_labels + '/'))
-            removed += 1
-        else:
-            os.rename(filename, filename.replace(FLAGS.nc_path, clean + '/'))
+        elif np.all(labels == -1):
+            print('No labels!')
+            no_labels.append(file)
     print(f'{removed} nc files have been removed because of artefacts.')
+    with open(os.path.join(FLAGS.nc_path, 'no_labels.pkl'), 'wb') as f:
+        pkl.dump(no_labels, f)
 
 
 if __name__ == '__main__':

@@ -8,6 +8,7 @@ from cumulo.utils.evaluation import evaluate_clouds, evaluate_file
 
 flags.DEFINE_string('path', None, help='Location of predictions')
 flags.DEFINE_string('output_path', None, help='Save location, defaults to above path')
+flags.DEFINE_bool('no_cloud_mask', False, help='Evaluated network was trained without cloud mask')
 FLAGS = flags.FLAGS
 
 
@@ -30,7 +31,7 @@ def main(_):
         data = np.load(file)
         report, probabilities, labels = \
             evaluate_file(file, data['outputs'], data['labels'], data['cloud_mask'],
-                          label_names, mask_names)
+                          label_names, mask_names, FLAGS.no_cloud_mask)
         # --- Save intermediate report and merge probabilities and labels for total evaluation ---
         total_report += report
         with open(os.path.join(output_path, 'report.txt'), 'w') as f:

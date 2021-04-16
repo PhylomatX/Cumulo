@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import matplotlib
 import pickle as pkl
 matplotlib.use('Agg')
@@ -87,6 +88,18 @@ def create_histogram(class_predictions, file, labels):
     plt.close()
 
 
+def create_class_histograms(outputs, labels, path):
+    outputs = outputs.copy()
+    outputs = outputs.transpose()
+    for label in range(8):
+        fig, axs = plt.subplots(2, 4, figsize=(20, 10))
+        axs = axs.reshape(-1)
+        for i in range(8):
+            _ = axs[i].hist(outputs[labels == label][:, i], bins=100, alpha=0.8, label=i, range=(-20, 20))
+            axs[i].set_title(i)
+        plt.savefig(os.path.join(path, f'{label}.png'))
+
+
 def evaluate_cloud_mask(mask_predictions, mask, mask_names, npz_file, detailed=False):
     mask_predictions = mask_predictions.reshape(-1)
     hard_mask_predictions = mask_predictions.copy()
@@ -139,16 +152,12 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file, 
         plt.savefig(npz_file.replace('.npz', '_matrix_normalized.png'))
         plt.close()
 
-        histogram_predictions = []
         for ix in range(len(label_names)):
             if np.all(cloudy_labels != ix):
                 continue
             ix_labels = np.zeros_like(cloudy_labels)
             ix_labels[cloudy_labels == ix] = 1
             ix_predictions = cloudy_probabilities[ix].reshape(-1)
-
-            # create_histogram([ix_predictions[ix_labels.astype(bool)], ix_predictions[~ix_labels.astype(bool)]],
-            #                  npz_file.replace('.npz', f'_{label_names[ix]}_hist.png'), ['True', 'False'])
 
             fpr, tpr, _ = sm.roc_curve(ix_labels, ix_predictions)
             auc = sm.auc(fpr, tpr)
@@ -167,8 +176,6 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file, 
             ix_labels = np.zeros_like(cloudy_labels)
             ix_labels[cloudy_labels == ix] = 1
             ix_predictions = cloudy_probabilities[ix].reshape(-1)
-            histogram_predictions.append(ix_predictions)
-
             precision, recall, _ = sm.precision_recall_curve(ix_labels, ix_predictions)
             plt.plot(recall, precision, label=label_names[ix])
         plt.xlabel('Recall')
@@ -178,26 +185,31 @@ def evaluate_clouds(cloudy_probabilities, cloudy_labels, label_names, npz_file, 
         plt.legend()
         plt.savefig(npz_file.replace('.npz', f'_pr.pdf'))
         plt.close()
-
-        # create_histogram(histogram_predictions, npz_file.replace('.npz', f'_predictions_hist.png'), label_names)
     return report, matrix_string
 
 
-def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names):
+# noinspection PyUnboundLocalVariable
+def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names, no_cloud_mask):
     labels = labels.reshape(-1)
     cloud_mask = cloud_mask.reshape(-1)
     cloudy_labels_mask = labels != -1  # use all existing labels (also non-cloudy ones)
     cloudy_labels = labels[cloudy_labels_mask]
-    probabilities = probabilities_from_outputs(outputs)
-    mask_probabilities = probabilities[0].copy().reshape(-1)
-    cloudy_class_probabilities = probabilities[1:9].reshape(8, -1)[:, cloudy_labels_mask]
+    probabilities = probabilities_from_outputs(outputs, no_cloud_mask)
+    if no_cloud_mask:
+        cloudy_class_probabilities = probabilities[0:8].reshape(8, -1)[:, cloudy_labels_mask]
+        outputs = outputs[0:8].reshape(8, -1)[:, cloudy_labels_mask]
+    else:
+        mask_probabilities = probabilities[0].copy().reshape(-1)
+        cloudy_class_probabilities = probabilities[1:9].reshape(8, -1)[:, cloudy_labels_mask]
+        outputs = outputs[1:9].reshape(8, -1)[:, cloudy_labels_mask]
 
     # --- Generate file-wise evaluation ---
     report = f"#### {file} ####\n\n"
-    mask_report = evaluate_cloud_mask(mask_probabilities, cloud_mask, mask_names, file)
-    report += 'Cloud mask eval:\n\n' + mask_report + '\n\n'
+    if not no_cloud_mask:
+        mask_report = evaluate_cloud_mask(mask_probabilities, cloud_mask, mask_names, file)
+        report += 'Cloud mask eval:\n\n' + mask_report + '\n\n'
     class_report, class_matrix = evaluate_clouds(cloudy_class_probabilities, cloudy_labels, label_names, file)
     report += 'Cloud class eval:\n\n' + class_report + '\n\n'
     report += class_matrix + '\n\n\n\n'
 
-    return report, cloudy_class_probabilities, cloudy_labels
+    return report, cloudy_class_probabilities, cloudy_labels, outputs

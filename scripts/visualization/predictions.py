@@ -11,8 +11,8 @@ def main(_):
         print(file)
         file = os.path.join(FLAGS.path, file)
         data = np.load(file)
-        outputs_to_figure_or_file(data['outputs'], data['labels'], data['cloud_mask'], FLAGS.use_continuous_colors,
-                                  FLAGS.cloud_mask_as_binary, FLAGS.to_file, file, FLAGS.label_dilation)
+        outputs_to_figure_or_file(data['outputs'], data['labels'], data['cloud_mask'], cloud_mask_as_binary=FLAGS.cloud_mask_as_binary,
+                                  to_file=FLAGS.to_file, npz_file=file, label_dilation=FLAGS.label_dilation, no_cloud_mask_prediction=FLAGS.no_cloud_mask)
 
 
 if __name__ == '__main__':

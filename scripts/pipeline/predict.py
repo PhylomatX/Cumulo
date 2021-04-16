@@ -3,11 +3,12 @@ import torch
 import math
 import os
 import sys
+import pickle as pkl
 from tqdm import tqdm
 from cumulo.data.loader import CumuloDataset
 from cumulo.utils.visualization import outputs_to_figure_or_file
 from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
-from cumulo.utils.evaluation import evaluate_file, evaluate_clouds
+from cumulo.utils.evaluation import evaluate_file, evaluate_clouds, create_class_histograms
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
 from absl import app
@@ -25,7 +26,7 @@ def load_model(model_dir):
         raise ValueError('Model type not known.')
     model_path = os.path.join(model_dir, FLAGS.model_name)
     model.load_state_dict(torch.load(model_path))
-    return model
+    return model.eval()
 
 
 def predict_tiles(model, tiles, device, batch_size):
@@ -81,8 +82,6 @@ def main(_):
         print(f"Found test set with {len(test_idx)} files.")
     except FileNotFoundError:
         test_idx = None
-    if FLAGS.prediction_number is not None:
-        test_idx = test_idx[:FLAGS.prediction_number]
     dataset = CumuloDataset(d_path=FLAGS.d_path, normalizer=normalizer, indices=test_idx, prediction_mode=True,
                             tile_size=FLAGS.tile_size, valid_convolution_offset=FLAGS.valid_convolution_offset,
                             most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT)
@@ -94,28 +93,54 @@ def main(_):
     model = load_model(FLAGS.m_path)
     model.to(device)
 
+    no_cloud_mask = False
+    if FLAGS.mask_weight == 0:
+        no_cloud_mask = True
+
     if FLAGS.immediate_evaluation:
         total_report = ''
         mask_names = [0, 1]  # cloud mask targets ('no cloud', 'cloud')
         label_names = list(range(8))  # cloud class targets (8 different cloud types)
         total_labels = np.array([])
         total_probabilities = None
+        total_outputs = None
 
-    for swath in tqdm(dataset):
+    swath_ix = 0
+    used = 0
+    prediction_number = len(dataset)
+    if FLAGS.prediction_number is not None:
+        prediction_number = FLAGS.prediction_number
+    while used < prediction_number:
+        swath = dataset[swath_ix]
         filename, radiances, locations, cloud_mask, labels = swath
+        if np.all(labels == -1):
+            swath_ix += 1
+            continue
+        else:
+            print(used)
+            used += 1
+            swath_ix += 1
+        # --- Mix tiles for potential improvement in BatchNorm ---
+        random_permutation = torch.randperm(radiances.shape[0])
+        radiances = radiances[random_permutation]
+        locations = locations[random_permutation]
+
+        # --- Generate tile predictions and insert them into the swath ---
         predictions = predict_tiles(model, radiances, device, FLAGS.dataset_bs)
         outputs = np.ones((FLAGS.nb_classes, *cloud_mask.squeeze().shape)) * -1
         for ix, loc in enumerate(locations):
             outputs[:, loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
 
-        # Remove unpredicted border region possibly caused by offset / valid convolutions
+        # --- Remove unpredicted border region possibly caused by offset / valid convolutions ---
         outputs = outputs[:, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
         labels = labels.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
+        outputs[3] = outputs[3] + 2
+
         if FLAGS.immediate_evaluation:
             filename = filename.replace(FLAGS.d_path, FLAGS.output_path + f'/').replace('.nc', '.npz')
-            report, probabilities, cloudy_labels = evaluate_file(filename, outputs.copy(), labels.copy(), cloud_mask.copy(), label_names, mask_names)
+            report, probabilities, cloudy_labels, eval_outputs = evaluate_file(filename, outputs.copy(), labels.copy(), cloud_mask.copy(), label_names, mask_names, no_cloud_mask)
             # --- Save intermediate report and merge probabilities and labels for total evaluation ---
             total_report += report
             with open(os.path.join(FLAGS.output_path, 'total/total_report.txt'), 'w') as f:
@@ -125,14 +150,24 @@ def main(_):
                 total_probabilities = probabilities
             else:
                 total_probabilities = np.hstack((total_probabilities, probabilities))
-            outputs_to_figure_or_file(outputs, labels, cloud_mask, FLAGS.use_continuous_colors,
-                                      FLAGS.cloud_mask_as_binary, FLAGS.to_file, filename)
+            if total_outputs is None:
+                total_outputs = eval_outputs
+            else:
+                total_outputs = np.hstack((total_outputs, eval_outputs))
+            outputs_to_figure_or_file(outputs, labels, cloud_mask, cloud_mask_as_binary=FLAGS.cloud_mask_as_binary,
+                                      to_file=FLAGS.to_file, npz_file=filename, no_cloud_mask_prediction=no_cloud_mask)
         else:
             np.savez(os.path.join(FLAGS.output_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
                      outputs=outputs, labels=labels, cloud_mask=cloud_mask)
 
     if FLAGS.immediate_evaluation:
         # --- Generate total evaluation and save final report ---
+        with open(os.path.join(FLAGS.output_path, 'total/total_outputs.pkl'), 'wb') as f:
+            pkl.dump(total_outputs, f)
+        with open(os.path.join(FLAGS.output_path, 'total/total_labels.pkl'), 'wb') as f:
+            pkl.dump(total_labels, f)
+        create_class_histograms(total_outputs, total_labels, os.path.join(FLAGS.output_path, 'total/'))
+
         print('Performing total evaluation...')
         total_report += '#### TOTAL ####\n\n'
         total_file = os.path.join(FLAGS.output_path, 'total/total.npz')

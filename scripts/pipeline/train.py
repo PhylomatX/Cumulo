@@ -44,9 +44,8 @@ def main(_):
     std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
     custom_class_weights = np.ones_like(class_weights)
-    custom_class_weights[3] *= 20
-    # custom_class_weights[4] /= 10
-    class_weights *= custom_class_weights
+    custom_class_weights[3] *= 5
+    class_weights = custom_class_weights
 
     if FLAGS.local_norm:
         print("Using local normalization.")
@@ -99,7 +98,6 @@ def main(_):
 
     # Prepare training environment
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    # lr_sched = optim.lr_scheduler.StepLR(optimizer, step_size=10000, gamma=0.9)
 
     # Begin with a very small lr and double it every 100 steps.
     # for grp in optimizer.param_groups:
@@ -195,24 +193,24 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                     for ix in range(labeled_mask.shape[0]):
                         b_labeled_mask = labeled_mask[ix]
                         b_labels = labels[ix][b_labeled_mask]
-                        b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][1:9])
-                        b_cloud_mask = cloud_mask[ix]
-                        b_outputs = outputs[ix][1:9][b_labeled_mask].reshape(8, -1).transpose(0, 1)
 
-                        mask_loss = FLAGS.mask_weight * bce_fn(outputs[ix][0], b_cloud_mask.float())  # BCEWithLogitsLoss for cloud mask
+                        mask_loss = 0
+                        if FLAGS.mask_weight > 0:
+                            b_cloud_mask = cloud_mask[ix]
+                            mask_loss = FLAGS.mask_weight * bce_fn(outputs[ix][0], b_cloud_mask.float())  # BCEWithLogitsLoss for cloud mask
+
+                        if FLAGS.mask_weight == 0:
+                            b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][0:8])
+                            b_outputs = outputs[ix][0:8][b_labeled_mask].reshape(8, -1).transpose(0, 1)
+                        else:
+                            b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][1:9])
+                            b_outputs = outputs[ix][1:9][b_labeled_mask].reshape(8, -1).transpose(0, 1)
                         class_loss = FLAGS.class_weight * class_loss_fn(b_outputs, b_labels.long())  # CrossEntropy for labels
 
-                        specific_class_weight = 5
-                        specific_class_labels = b_labels.clone()
-                        specific_class_labels[b_labels != 3] = 0
-                        specific_class_labels[b_labels == 3] = 1
-                        specific_class_loss = specific_class_weight * bce_fn(outputs[ix][9][b_labeled_mask[0]], specific_class_labels.float())
-
-                        auto_loss, auto_weight = 0, 0
+                        auto_loss = 0
                         if FLAGS.auto_weight > 0:
                             auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][9:].float(), radiances[ix][:(FLAGS.nb_classes - 9)].float())  # MSE for autoencoder loss
-                            auto_weight = FLAGS.auto_weight
-                        loss += (mask_loss + class_loss + auto_loss + specific_class_loss) / (FLAGS.mask_weight + FLAGS.class_weight + auto_weight + specific_class_weight)
+                        loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + FLAGS.auto_weight)
                     loss /= labeled_mask.shape[0]
 
                     if phase == 'train':
@@ -232,30 +230,27 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                                  cloud_mask=cloud_mask[0])
 
                 labeled_mask = labels != -1
-                mask_prediction = outputs[:, 0, ...]
-                mask_prediction[mask_prediction < 0.5] = 0
-                mask_prediction[mask_prediction >= 0.5] = 1
-                class_prediction = np.argmax(outputs[:, 1:9, ...], axis=1)
-                specific_class_prediction = outputs[:, 9, ...]
-                specific_class_prediction[specific_class_prediction < 0.5] = 0
-                specific_class_prediction[specific_class_prediction >= 0.5] = 1
-                specific_class_labels = labels.copy()
-                specific_class_labels[specific_class_labels != 3] = 0
-                specific_class_labels[specific_class_labels == 3] = 1
 
-                # statistics
+                if FLAGS.mask_weight == 0:
+                    class_prediction = np.argmax(outputs[:, 0:8, ...], axis=1)
+                    mask_accuracy = 0.0
+                else:
+                    mask_prediction = outputs[:, 0, ...]
+                    mask_prediction[mask_prediction < 0.5] = 0
+                    mask_prediction[mask_prediction >= 0.5] = 1
+                    class_prediction = np.argmax(outputs[:, 1:9, ...], axis=1)
+                    mask_accuracy = float(np.sum(mask_prediction.reshape(-1) == cloud_mask.reshape(-1)) / cloud_mask.reshape(-1).shape[0])
+
+                # --- statistics ---
                 running_loss += loss.item()
-                mask_accuracy = float(np.sum(mask_prediction.reshape(-1) == cloud_mask.reshape(-1)) / cloud_mask.reshape(-1).shape[0])
                 class_accuracy = float(np.sum(class_prediction[labeled_mask] == labels[labeled_mask]) / labels[labeled_mask].shape[0])
-                specific_class_accuracy = float(np.sum(specific_class_prediction[labeled_mask] == specific_class_labels[labeled_mask]) / specific_class_labels[labeled_mask].shape[0])
                 accuracy = (FLAGS.mask_weight * mask_accuracy + FLAGS.class_weight * class_accuracy) / (FLAGS.mask_weight + FLAGS.class_weight)
                 running_accuracy += accuracy
 
                 print(f"Epoch: {epoch} "
                       f"- Loss: {round(running_loss / (sample_ix + 1), 3)} "
                       f"- Class accuracy: {round(class_accuracy, 3)} "
-                      f"- Mask accuracy: {round(mask_accuracy, 3)} "
-                      f"- Specific class accuracy: {round(specific_class_accuracy, 3)} - {FLAGS.m_path}")
+                      f"- Mask accuracy: {round(mask_accuracy, 3)} - {FLAGS.m_path}")
 
                 with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
                     pkl.dump(metrics, f)

@@ -17,24 +17,33 @@ NO_CLOUD = np.array([5., 5., 5.]) / 255  # black
 NO_LABEL = np.array([250., 250., 250.]) / 255  # white
 
 
-def prediction_to_continuous_rgb(prediction, cloud_mask_is_binary=True):
-    clouds = np.matmul(prediction[1:9, ...].transpose(), COLORS ** 2)
+def prediction_to_continuous_rgb(prediction, cloud_mask_is_binary=True, cloud_mask=None):
+    if cloud_mask is None:
+        clouds = np.matmul(prediction[1:9, ...].transpose(), COLORS ** 2)
+    else:
+        clouds = np.matmul(prediction[:8, ...].transpose(), COLORS ** 2)
     clouds = np.swapaxes(clouds, 0, 1)
-    if cloud_mask_is_binary:
-        prediction[0][prediction[0] < 0.5] = 0
-        prediction[0][prediction[0] >= 0.5] = 1
-    cloud_mask_prediction = np.expand_dims(prediction[0], -1)
+    if cloud_mask is None:
+        if cloud_mask_is_binary:
+            prediction[0][prediction[0] < 0.5] = 0
+            prediction[0][prediction[0] >= 0.5] = 1
+        cloud_mask = np.expand_dims(prediction[0], -1)
+    cloud_mask_prediction = np.expand_dims(cloud_mask, -1)
     prediction = clouds * cloud_mask_prediction + (1 - cloud_mask_prediction) * NO_CLOUD ** 2
     prediction = np.sqrt(prediction)
     prediction[np.all(prediction == 0, 2)] = NO_CLOUD
     return prediction
 
 
-def prediction_to_discrete_rgb(prediction):
-    prediction[0][prediction[0] < 0.5] = 0
-    prediction[0][prediction[0] >= 0.5] = 1
-    flat = np.argmax(prediction[1:9, ...], 0)
-    prediction = include_cloud_mask(flat, prediction[0]).astype(np.int)
+def prediction_to_discrete_rgb(prediction, cloud_mask=None):
+    if cloud_mask is None:
+        prediction[0][prediction[0] < 0.5] = 0
+        prediction[0][prediction[0] >= 0.5] = 1
+        cloud_mask = prediction[0]
+        flat = np.argmax(prediction[1:9, ...], 0)
+    else:
+        flat = np.argmax(prediction[:8, ...], 0)
+    prediction = include_cloud_mask(flat, cloud_mask).astype(np.int)
     colors_merged = np.vstack([NO_CLOUD, COLORS])
     prediction = colors_merged[prediction.reshape(-1)].reshape(*prediction.shape, 3)
     return prediction
@@ -87,11 +96,11 @@ def prediction_to_file(npz_file, rgb_predictions_continuous, rgb_predictions_dis
         imageio.imwrite(npz_file.replace('.npz', '_maskpred.png'), (rgb_predictions * 255).astype(np.uint8))
 
 
-def outputs_to_figure_or_file(outputs, labels, cloud_mask, use_continuous_colors=True, cloud_mask_as_binary=True,
+def outputs_to_figure_or_file(outputs, labels, cloud_mask, cloud_mask_as_binary=True, no_cloud_mask_prediction=False,
                               to_file=True, npz_file='', label_dilation=10, border_dilation=2):
-    prediction = probabilities_from_outputs(outputs)
-    rgb_prediction_continuous = prediction_to_continuous_rgb(prediction, cloud_mask_as_binary)
-    rgb_prediction_discrete = prediction_to_discrete_rgb(prediction)
+    prediction = probabilities_from_outputs(outputs, no_cloud_mask_prediction)
+    rgb_prediction_continuous = prediction_to_continuous_rgb(prediction, cloud_mask_as_binary, cloud_mask if no_cloud_mask_prediction else None)
+    rgb_prediction_discrete = prediction_to_discrete_rgb(prediction, cloud_mask if no_cloud_mask_prediction else None)
 
     # --- dilate labeled pixels for better visualization ---
     labeled_pixels = np.logical_and(labels != -1, cloud_mask == 1)
