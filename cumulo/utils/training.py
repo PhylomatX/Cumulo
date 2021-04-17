@@ -32,7 +32,20 @@ def get_sampling_mask(mask_shape, tile_size):
     return mask
 
 
-def sample_n_tiles_with_labels(radiances, cloud_mask, labels, n, tile_size=128, valid_convolution_offset=0, filter_cloudy_labels=True):
+def sample_n_tiles_with_labels(radiances, cloud_mask, labels, n, tile_size, valid_convolution_offset, filter_cloudy_labels):
+    """
+    Randomly draws n tiles with labels from the given swath. If n > number of labeled pixels, multiple tiles are extracted around
+    each pixel. However, all tiles differ due to random shifting.
+
+    Args:
+        radiances: radiances from the swath.
+        cloud_mask: cloud mask from the swath.
+        labels: labels from the swath.
+        n: number of tiles.
+        tile_size: tile extensions (e.g. 256 x 256).
+        valid_convolution_offset: the size offset between network inputs and outputs (due to valid convolutions).
+        filter_cloudy_labels: extract tiles only from labels which are inside clouds.
+    """
     allowed_mask = get_sampling_mask((MAX_WIDTH, MAX_HEIGHT), tile_size)
     labelled_mask = labels != -1
     if filter_cloudy_labels:
@@ -49,12 +62,13 @@ def sample_n_tiles_with_labels(radiances, cloud_mask, labels, n, tile_size=128, 
         idcs = np.random.choice(np.arange(len(potential_pixels)), n, replace=False)
         potential_pixels = potential_pixels[idcs]
     else:
+        # --- if there are not enough labeled pixels, multiple tiles are extracted around single pixels ---
         while len(potential_pixels) < n:
             potential_pixels = np.vstack((potential_pixels, potential_pixels_cache))
         idcs = np.random.choice(np.arange(len(potential_pixels)), n, replace=False)
         potential_pixels = potential_pixels[idcs]
 
-    # shift tiles randomly to avoid overfitting, but ensure that labels are within network output (in case of valid convolutions)
+    # --- shift tiles randomly to avoid overfitting, but ensure that labels are within network output (in case of valid convolutions) ---
     random_offsets = np.random.randint(-(tile_size // 2) + valid_convolution_offset, (tile_size // 2) - valid_convolution_offset, potential_pixels.shape)
     potential_pixels += random_offsets
 
@@ -73,45 +87,55 @@ def sample_n_tiles_with_labels(radiances, cloud_mask, labels, n, tile_size=128, 
     return tuple(map(np.stack, tiles))
 
 
-def get_dataset_statistics(dataset, nb_classes, tile_size, nb_samples=None):
-    weights = np.zeros(nb_classes)
-    m = np.zeros(13)
-    s = np.zeros(13)
-    if nb_samples is None:
-        nb_samples = len(dataset)
-    nb_tiles = nb_samples
-    rads, labels, _ = dataset[0]
-    if len(rads.shape) == 4:
-        nb_tiles *= rads.shape[0]
+def get_dataset_statistics(dataset, class_number, tile_size, sample_number=None):
+    """
+    Calculates the statistics (class weights and channel-wise mean and variance) of the dataset.
+
+    Args:
+        dataset: DataSet which returns either batched or single tiles (e.g. the CumuloDataset)
+        class_number: number of classes in the dataset.
+        tile_size: tile extends (e.g. 256 for 256 x 256).
+        sample_number: number of tiles to use for the statistics calculation.
+    """
+    weights = np.zeros(class_number)
+    mean = np.zeros(13)
+    variance = np.zeros(13)
+    if sample_number is None:
+        sample_number = len(dataset)
+    tile_number = sample_number
+    radiances, labels, _ = dataset[0]
+    if len(radiances.shape) == 4:
+        # calculate statistics when dataset returns batched tiles
+        tile_number *= radiances.shape[0]
 
     batch_size = 1
-    for sample in tqdm(range(nb_samples)):
-        rads, labels, _ = dataset[sample]
-        if len(rads.shape) == 4:
-            batch_size = rads.shape[0]
+    for sample in tqdm(range(sample_number)):
+        radiances, labels, _ = dataset[sample]
+        if len(radiances.shape) == 4:
+            batch_size = radiances.shape[0]
         for i in range(batch_size):
-            crads = rads[i].numpy()
-            clabels = labels[i].numpy()
-            weights += np.histogram(clabels, bins=range(nb_classes + 1), normed=False)[0]
-            m += np.mean(crads, axis=(1, 2))
-        print(f"Sample: {sample}")
+            radiances_ = radiances[i].numpy()
+            labels_ = labels[i].numpy()
+            weights += np.histogram(labels_, bins=range(class_number + 1), normed=False)[0]
+            mean += np.mean(radiances_, axis=(1, 2))
+        print(f"sample: {sample}")
         print(f"weights: {weights / np.sum(weights)}")
-        print(f"mean: {m / (sample * rads.shape[0])}")
+        print(f"mean: {mean / (sample * radiances.shape[0])}")
 
-    m /= nb_tiles
-    m = m.reshape((13, 1, 1))
+    mean /= tile_number
+    mean = mean.reshape((13, 1, 1))
 
-    for sample in tqdm(range(nb_samples)):
-        rads, labels = dataset[sample]
+    for sample in tqdm(range(sample_number)):
+        radiances, labels = dataset[sample]
         for i in range(batch_size):
-            crads = rads[i].numpy()
-            s += np.sum((crads - m)**2, (1, 2))
+            radiances_ = radiances[i].numpy()
+            variance += np.sum((radiances_ - mean)**2, (1, 2))
         print(f"weights: {weights / np.sum(weights)}")
-        print(f"mean: {m}")
+        print(f"mean: {mean}")
 
-    s /= nb_tiles * tile_size ** 2
-    std = np.sqrt(s)
+    variance /= tile_number * tile_size ** 2
+    std = np.sqrt(variance)
     std = std.reshape((13, 1, 1))
     weights = weights / np.sum(weights)
     weights_div = 1 / (np.log(1.02 + weights))
-    return weights, weights_div, m, std
+    return weights, weights_div, mean, std

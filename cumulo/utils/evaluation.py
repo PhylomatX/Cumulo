@@ -9,6 +9,9 @@ from cumulo.utils.basics import probabilities_from_outputs
 
 
 def divide_into_tiles(tile_size, offset, radiances):
+    """
+    Divides swath into multiple tiles which fully cover the swath (except for valid convolution offsets at the borders).
+    """
     img_width = radiances.shape[1]
     img_height = radiances.shape[2]
 
@@ -45,7 +48,6 @@ def divide_into_tiles(tile_size, offset, radiances):
 
     tiles = np.stack(tiles)
     locations = np.stack(locations)
-
     return tiles, locations
 
 
@@ -140,6 +142,7 @@ def evaluate_clouds(probabilities, labels, label_names, npz_file, detailed=False
         with open(npz_file.replace('.npz', '_matrix.pkl'), 'wb') as f:
             pkl.dump(matrix, f)
 
+        # --- visualize confusion matrices ---
         class_matrix_disp = sm.ConfusionMatrixDisplay(matrix, display_labels=label_names)
         class_matrix_disp.plot(cmap='Reds', values_format='d')
         plt.savefig(npz_file.replace('.npz', '_matrix.png'))
@@ -151,6 +154,7 @@ def evaluate_clouds(probabilities, labels, label_names, npz_file, detailed=False
         plt.savefig(npz_file.replace('.npz', '_matrix_normalized.png'))
         plt.close()
 
+        # --- generate ROCS ---
         for ix in range(len(label_names)):
             if np.all(labels != ix):
                 continue
@@ -169,6 +173,7 @@ def evaluate_clouds(probabilities, labels, label_names, npz_file, detailed=False
         plt.savefig(npz_file.replace('.npz', f'_roc.pdf'))
         plt.close()
 
+        # --- generate precision-recall-curves ---
         for ix in range(len(label_names)):
             if np.all(labels != ix):
                 continue
@@ -189,6 +194,19 @@ def evaluate_clouds(probabilities, labels, label_names, npz_file, detailed=False
 
 # noinspection PyUnboundLocalVariable
 def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names, no_cloud_mask_prediction):
+    """
+    Used to evaluate full swath predictions (single or multiple if merged).
+
+    Args:
+        file:
+        outputs: network outputs, may contain cloud mask predictions at channel 0.
+        labels: ground truth labels.
+        cloud_mask: ground truth cloud mask.
+        label_names: class label names to use in reports.
+        mask_names: mask label names to use in reports.
+        no_cloud_mask_prediction: Flag for indicating that the outputs do not contain a cloud mask prediction
+            at channel 0.
+    """
     labels = labels.reshape(-1)
     cloud_mask = cloud_mask.reshape(-1)
     cloudy_labels_mask = labels != -1  # use all existing labels (also non-cloudy ones)

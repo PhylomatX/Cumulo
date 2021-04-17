@@ -76,14 +76,15 @@ def main(_):
                                   tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
                                   valid_convolution_offset=FLAGS.valid_convolution_offset,
                                   most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT,
-                                  exclude=exclude)
+                                  exclude=exclude, filter_cloudy_labels=FLAGS.filter_cloudy_labels)
 
     if FLAGS.val:
         print("Training with validation!")
         val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
                                     tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
                                     valid_convolution_offset=FLAGS.valid_convolution_offset,
-                                    most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT, exclude=exclude)
+                                    most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT, exclude=exclude,
+                                    filter_cloudy_labels=FLAGS.filter_cloudy_labels)
         datasets = {'train': train_dataset, 'val': val_dataset}
     else:
         print("Training without validation!")

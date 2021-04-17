@@ -13,7 +13,8 @@ class CumuloDataset(Dataset):
 
     def __init__(self, d_path, normalizer=None, indices=None, prediction_mode: bool = False,
                  batch_size: int = 1, tile_size: int = 256, rotation_probability: float = 0,
-                 valid_convolution_offset=0, most_frequent_clouds_as_GT=False, exclude=None):
+                 valid_convolution_offset=0, most_frequent_clouds_as_GT=False, exclude=None,
+                 filter_cloudy_labels=True):
         self.root_dir = d_path
         self.file_paths = glob.glob(os.path.join(d_path, "*.nc"))
         self.normalizer = normalizer
@@ -23,6 +24,7 @@ class CumuloDataset(Dataset):
         self.rotation_probability = rotation_probability
         self.valid_convolution_offset = valid_convolution_offset
         self.most_frequent_clouds_as_GT = most_frequent_clouds_as_GT
+        self.filter_cloudy_labels = filter_cloudy_labels
 
         if len(self.file_paths) == 0:
             raise FileNotFoundError("Dataloader found no files.")
@@ -48,10 +50,11 @@ class CumuloDataset(Dataset):
             radiances = None
             next_file = idx
             while radiances is None:
-                # If one nc file has no labeled pixels for the given tile size, another random nc file is used
+                # --- If one nc file has no labeled pixels for the given tile size, another random nc file is used ---
                 radiances, cloud_mask, labels = read_nc(self.file_paths[next_file], filter_most_freqent=self.most_frequent_clouds_as_GT)
                 radiances, cloud_mask, labels = sample_n_tiles_with_labels(radiances, cloud_mask, labels, tile_size=self.tile_size, n=self.batch_size,
-                                                                           valid_convolution_offset=self.valid_convolution_offset)
+                                                                           valid_convolution_offset=self.valid_convolution_offset,
+                                                                           filter_cloudy_labels=self.filter_cloudy_labels)
                 next_file = np.random.randint(0, len(self.file_paths))
             if self.normalizer is not None:
                 radiances = self.normalizer(radiances)

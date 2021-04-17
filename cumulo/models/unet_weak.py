@@ -3,15 +3,8 @@ import torch.nn as nn
 
 
 class ConvConv(nn.Module):
-    """ (conv => ReLU) * 2 => maxpool """
 
     def __init__(self, in_channels, out_channels, norm='bn', padding=0):
-        """
-        Args:
-            in_channels: input channel
-            out_channels: output channel
-            norm: normalization type, one of ['bn', 'gn', 'none']
-        """
         super(ConvConv, self).__init__()
 
         if norm == 'bn':
@@ -48,14 +41,8 @@ class DownConv(nn.Module):
 
 
 class UpconvConcat(nn.Module):
-    """ (conv => ReLU) * 2 => maxpool """
 
     def __init__(self, in_channels, out_channels, norm='bn', padding=0):
-        """
-        Args:
-            in_channels (int): input channel
-            out_channels (int): output channel
-        """
         super(UpconvConcat, self).__init__()
         self.upconv = nn.Upsample(mode='bilinear', scale_factor=2, align_corners=False)
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
@@ -71,11 +58,6 @@ class UpconvConcat(nn.Module):
 
 
 def extract_img(size, in_tensor):
-    """
-    Args:
-        size (int): size of crop
-        in_tensor (tensor): tensor to be cropped
-    """
     dim1, dim2 = in_tensor.size()[2:]
     in_tensor = in_tensor[:, :, int((dim1-size)/2):int((dim1+size)/2), int((dim2-size)/2):int((dim2+size)/2)]
     return in_tensor
@@ -107,6 +89,8 @@ class UNet_weak(nn.Module):
         X = self.upconv3(X, conv1)
         X = self.conv_out(X)
 
-        # 256 => 164 (offset: 46)
+        # 256 => 164 (offset: 46) with 3 layers
+        # 256 => 216 (offset: 20) with 2 layers
+        # 256 => 240 (offset: 8) with 1 layer
 
         return X

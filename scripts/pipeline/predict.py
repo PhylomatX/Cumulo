@@ -138,7 +138,7 @@ def main(_):
                 total_outputs = eval_outputs
             else:
                 total_outputs = np.hstack((total_outputs, eval_outputs))
-            outputs_to_figure_or_file(outputs, labels, cloud_mask, cloud_mask_as_binary=FLAGS.cloud_mask_as_binary,
+            outputs_to_figure_or_file(outputs, labels, cloud_mask, make_cloud_mask_binary=FLAGS.cloud_mask_as_binary,
                                       to_file=FLAGS.to_file, npz_file=filename, no_cloud_mask_prediction=no_cloud_mask_prediction)
         else:
             np.savez(os.path.join(FLAGS.output_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),

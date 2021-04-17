@@ -11,7 +11,7 @@ def main(_):
         print(file)
         file = os.path.join(FLAGS.path, file)
         data = np.load(file)
-        outputs_to_figure_or_file(data['outputs'], data['labels'], data['cloud_mask'], cloud_mask_as_binary=FLAGS.cloud_mask_as_binary,
+        outputs_to_figure_or_file(data['outputs'], data['labels'], data['cloud_mask'], make_cloud_mask_binary=FLAGS.cloud_mask_as_binary,
                                   to_file=FLAGS.to_file, npz_file=file, label_dilation=FLAGS.label_dilation, no_cloud_mask_prediction=FLAGS.no_cloud_mask)
 
 

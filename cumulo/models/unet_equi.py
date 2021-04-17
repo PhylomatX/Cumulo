@@ -75,11 +75,11 @@ class UNet_equi(nn.Module):
 
         self.conv1 = DownConv(self.in_channels, self.filters, norm, padding=padding)
         self.conv2 = DownConv(self.filters, self.filters2, norm, padding=padding)
-        # self.conv3 = DownConv(self.filters2, self.filters4, norm, padding=padding)
+        self.conv3 = DownConv(self.filters2, self.filters4, norm, padding=padding)
 
-        self.conv4 = ConvConv(self.filters2, self.filters4, norm, padding=padding)
+        self.conv4 = ConvConv(self.filters4, self.filters8, norm, padding=padding)
 
-        # self.upconv1 = UpConvConcat(self.filters8, self.filters4, norm, padding=padding)
+        self.upconv1 = UpConvConcat(self.filters8, self.filters4, norm, padding=padding)
         self.upconv2 = UpConvConcat(self.filters4, self.filters2, norm, padding=padding)
         self.upconv3 = UpConvConcat(self.filters2, self.filters, norm, padding=padding)
 
@@ -90,9 +90,9 @@ class UNet_equi(nn.Module):
         X = enn.GeometricTensor(X, self.in_channels)
         X, conv1 = self.conv1(X)
         X, conv2 = self.conv2(X)
-        # X, conv3 = self.conv3(X)
+        X, conv3 = self.conv3(X)
         X = self.conv4(X)
-        # X = self.upconv1(X, conv3)
+        X = self.upconv1(X, conv3)
         X = self.upconv2(X, conv2)
         X = self.upconv3(X, conv1)
         X = self.conv_out(X)

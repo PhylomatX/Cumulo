@@ -1,3 +1,10 @@
+"""
+All functions in here were just copied from https://github.com/FrontierDevelopmentLab/CUMULO.
+The CUMULO paper authors adapted the functions from https://openreview.net/pdf?id=HJsjkMb0Z
+and https://arxiv.org/abs/1804.04368.
+"""
+
+
 from sklearn.utils.class_weight import compute_class_weight
 import numpy as np
 import torch.nn as nn

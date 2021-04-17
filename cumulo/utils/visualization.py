@@ -17,24 +17,38 @@ NO_CLOUD = np.array([5., 5., 5.]) / 255  # black
 NO_LABEL = np.array([250., 250., 250.]) / 255  # white
 
 
-def prediction_to_continuous_rgb(prediction, cloud_mask_is_binary=True, cloud_mask=None):
+def prediction_to_continuous_rgb(probabilities, make_cloud_mask_binary=True, cloud_mask=None):
+    """
+    Transform network outputs into RGB images using the outputs as color weights.
+    See https://www.youtube.com/watch?v=LKnqECcg6Gw&ab_channel=minutephysics for
+    explanation of squared values.
+    
+    Args:
+        probabilities: Network outputs after softmax / sigmoid.
+        make_cloud_mask_binary: Transform cloud mask predictions into binary mask.
+        cloud_mask: If None, the first channel of `probabilities` is used as the cloud mask.
+            If not None, this is used as the cloud mask.
+    """
     if cloud_mask is None:
-        clouds = np.matmul(prediction[1:9, ...].transpose(), COLORS ** 2)
-        if cloud_mask_is_binary:
-            prediction[0][prediction[0] < 0.5] = 0
-            prediction[0][prediction[0] >= 0.5] = 1
-        cloud_mask = np.expand_dims(prediction[0], -1)
+        clouds = np.matmul(probabilities[1:9, ...].transpose(), COLORS ** 2)
+        if make_cloud_mask_binary:
+            probabilities[0][probabilities[0] < 0.5] = 0
+            probabilities[0][probabilities[0] >= 0.5] = 1
+        cloud_mask = np.expand_dims(probabilities[0], -1)
     else:
-        clouds = np.matmul(prediction[:8, ...].transpose(), COLORS ** 2)
+        clouds = np.matmul(probabilities[:8, ...].transpose(), COLORS ** 2)
     clouds = np.swapaxes(clouds, 0, 1)
     cloud_mask_prediction = np.expand_dims(cloud_mask, -1)
-    prediction = clouds * cloud_mask_prediction + (1 - cloud_mask_prediction) * NO_CLOUD ** 2
-    prediction = np.sqrt(prediction)
-    prediction[np.all(prediction == 0, 2)] = NO_CLOUD
-    return prediction
+    probabilities = clouds * cloud_mask_prediction + (1 - cloud_mask_prediction) * NO_CLOUD ** 2
+    probabilities = np.sqrt(probabilities)
+    probabilities[np.all(probabilities == 0, 2)] = NO_CLOUD
+    return probabilities
 
 
 def prediction_to_discrete_rgb(prediction, cloud_mask=None):
+    """
+    Use maximum probabilites as labels and generate RGB images.
+    """
     if cloud_mask is None:
         prediction[0][prediction[0] < 0.5] = 0
         prediction[0][prediction[0] >= 0.5] = 1
@@ -79,7 +93,7 @@ def prediction_to_figure(prediction, ground_truth, cloud_mask_as_binary=True):
     return fig
 
 
-def prediction_to_file(npz_file, rgb_predictions_continuous, rgb_predictions_discrete, rgb_ground_truth, rgb_labels, cloud_mask_as_binary=True):
+def prediction_to_file(npz_file, rgb_predictions_continuous, rgb_predictions_discrete, rgb_ground_truth, rgb_labels, make_cloud_mask_binary=True):
     imageio.imwrite(npz_file.replace('.npz', '_classpred_continuous.png'), (rgb_predictions_continuous * 255).astype(np.uint8))
     imageio.imwrite(npz_file.replace('.npz', '_classpred_discrete.png'), (rgb_predictions_discrete * 255).astype(np.uint8))
     imageio.imwrite(npz_file.replace('.npz', '_gt.png'), (rgb_ground_truth * 255).astype(np.uint8))
@@ -89,16 +103,16 @@ def prediction_to_file(npz_file, rgb_predictions_continuous, rgb_predictions_dis
     rgb_predictions_discrete[label_mask, :] = rgb_labels[label_mask, :]
     imageio.imwrite(npz_file.replace('.npz', '_classpred_labels.png'), (rgb_predictions_discrete * 255).astype(np.uint8))
     # --- save binary cloud mask prediction ---
-    if cloud_mask_as_binary:
+    if make_cloud_mask_binary:
         rgb_predictions = rgb_predictions_cache
         rgb_predictions[np.any(rgb_predictions != NO_CLOUD[0], 2)] = NO_LABEL
         imageio.imwrite(npz_file.replace('.npz', '_maskpred.png'), (rgb_predictions * 255).astype(np.uint8))
 
 
-def outputs_to_figure_or_file(outputs, labels, cloud_mask, cloud_mask_as_binary=True, no_cloud_mask_prediction=False,
+def outputs_to_figure_or_file(outputs, labels, cloud_mask, make_cloud_mask_binary=True, no_cloud_mask_prediction=False,
                               to_file=True, npz_file='', label_dilation=10, border_dilation=2):
     prediction = probabilities_from_outputs(outputs, no_cloud_mask_prediction)
-    rgb_prediction_continuous = prediction_to_continuous_rgb(prediction, cloud_mask_as_binary, cloud_mask if no_cloud_mask_prediction else None)
+    rgb_prediction_continuous = prediction_to_continuous_rgb(prediction, make_cloud_mask_binary, cloud_mask if no_cloud_mask_prediction else None)
     rgb_prediction_discrete = prediction_to_discrete_rgb(prediction, cloud_mask if no_cloud_mask_prediction else None)
 
     # --- dilate labeled pixels for better visualization ---
@@ -117,8 +131,8 @@ def outputs_to_figure_or_file(outputs, labels, cloud_mask, cloud_mask_as_binary=
     rgb_ground_truth = labels_and_cloud_mask_to_rgb(dilated_labels, cloud_mask)
 
     if to_file:
-        prediction_to_file(npz_file, rgb_prediction_continuous, rgb_prediction_discrete, rgb_ground_truth, rgb_labels, cloud_mask_as_binary)
+        prediction_to_file(npz_file, rgb_prediction_continuous, rgb_prediction_discrete, rgb_ground_truth, rgb_labels, make_cloud_mask_binary)
     else:
-        prediction_to_figure(rgb_prediction_continuous, rgb_ground_truth, cloud_mask_as_binary)
+        prediction_to_figure(rgb_prediction_continuous, rgb_ground_truth, make_cloud_mask_binary)
         plt.show()
         plt.close()

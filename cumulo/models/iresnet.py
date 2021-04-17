@@ -1,11 +1,16 @@
+"""
+All functions in here were just copied from https://github.com/FrontierDevelopmentLab/CUMULO.
+The CUMULO paper authors adapted the functions from https://openreview.net/pdf?id=HJsjkMb0Z
+and https://arxiv.org/abs/1804.04368.
+"""
+
+
 import numpy as np
 import torch
 import torch.distributions as distributions
 import torch.nn as nn
 import torch.nn.functional as F
-
 from torch.distributions import constraints
-
 from cumulo.utils.iresnet_utils import InjectivePad, ActNorm2D, Split, MaxMinGroup, power_series_matrix_logarithm_trace, spectral_norm_conv, spectral_norm_fc
 from cumulo.utils.iresnet_utils import squeeze as Squeeze
 

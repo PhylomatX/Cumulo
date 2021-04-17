@@ -10,6 +10,15 @@ labels_nc = 'cloud_layer_type'
 
 
 def read_nc(nc_file, filter_most_freqent=False):
+    """
+    Extracts radiances, cloud mask and labels from nc file.
+
+    Args:
+        nc_file: The nc file containing the data.
+        filter_most_freqent: Flag to reduce labels to most frequent label within each pixel (Each pixel can have up to 10 labels
+            for clouds at different heights, see https://arxiv.org/abs/1911.04227 for more details). If False, the lowest cloud
+            labels are taken as ground truth.
+    """
     file = nc4.Dataset(nc_file, 'r', format='NETCDF4')
     radiances = np.vstack([file.variables[name][:] for name in radiances_nc])
     cloud_mask = file.variables[cloud_mask_nc][:]
@@ -24,6 +33,9 @@ def read_nc(nc_file, filter_most_freqent=False):
 
 
 def get_most_frequent_label(labels):
+    """
+    Reduces labels to most frequent labels in each pixel.
+    """
     labels = labels
     mask = np.any(labels != -1, axis=2)
     labeled_pixels = labels[mask]
@@ -44,12 +56,24 @@ def get_most_frequent_label(labels):
 
 
 def include_cloud_mask(labels, cloud_mask):
+    """
+    Merges labels and cloud mask. Resulting pixels contain -1 for 'cloud without label',
+    0 for 'no cloud' and 1 - 9 for the cloud classes.
+    """
     labels = labels.copy()
     labels[labels >= 0] += 1
     return labels * cloud_mask
 
 
 def probabilities_from_outputs(outputs, no_cloud_mask_prediction):
+    """
+    Transforms network outputs to probabilities.
+
+    Args:
+        outputs: Network outputs.
+        no_cloud_mask_prediction: Flag for indicating that the network did not learn the
+            cloud mask at channel 0.
+    """
     outputs = outputs.copy()
     if no_cloud_mask_prediction:
         outputs[0:8, ...] = ss.softmax(outputs[0:8, ...], axis=0)  # 8 channels were trained for cloud classes
