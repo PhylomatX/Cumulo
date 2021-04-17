@@ -121,7 +121,7 @@ def main(_):
     #     grp['lr'] = 1e-7
     # lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
 
-    # base_lr and max_lr were found with the experimental procedure from the CyclicLR paper (see above)
+    # --- base_lr and max_lr were found with the experimental procedure from https://arxiv.org/abs/1506.01186, section 3.3 (see above) ---
     if FLAGS.model == 'weak':
         lr_sched = torch.optim.lr_scheduler.CyclicLR(
             optimizer,
@@ -195,7 +195,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
             for sample_ix, sample in enumerate(tqdm(dataloaders[phase])):
                 radiances, labels, cloud_mask = sample
 
-                # --- unpack PyTorch batching if dataloader delivers batches already
+                # --- unpack PyTorch batching if dataloader delivers batches already ---
                 if FLAGS.merged:
                     radiances = radiances.reshape(-1, *tuple(radiances.shape[2:]))
                     labels = labels.reshape(-1, *tuple(radiances.shape[2:]))
@@ -212,7 +212,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                         outputs, _, logpz, trace = model(radiances)
                         logpx = logpz + trace
                         loss = bits_per_dim(logpx, radiances).mean()
-                        labels = torch.max(labels.reshape(labels.shape[0], -1), 1)[0]
+                        labels = torch.max(labels.reshape(labels.shape[0], -1), 1)[0]  # reduce labels (each tile only contains one label != -1)
                         mean_entropy = class_loss_fn(outputs, labels.long())
                         loss += iresnet_class_weight * mean_entropy
                     else:
@@ -233,16 +233,19 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                                 mask_loss = FLAGS.mask_weight * bce_fn(outputs[ix][0], b_cloud_mask.float())  # BCEWithLogitsLoss for cloud mask
 
                             if FLAGS.mask_weight == 0:
+                                # no cloud mask prediction
                                 b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][0:8])
                                 b_outputs = outputs[ix][0:8][b_labeled_mask].reshape(8, -1).transpose(0, 1)
                             else:
+                                # first output is cloud mask prediction
                                 b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][1:9])
                                 b_outputs = outputs[ix][1:9][b_labeled_mask].reshape(8, -1).transpose(0, 1)
                             class_loss = FLAGS.class_weight * class_loss_fn(b_outputs, b_labels.long())  # CrossEntropy for labels
 
                             auto_loss = 0
                             if FLAGS.auto_weight > 0:
-                                auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][9:].float(), radiances[ix][:(FLAGS.nb_classes - 9)].float())  # MSE for autoencoder loss
+                                output_ix = 8 if FLAGS.mask_weight == 0 else 9
+                                auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][output_ix:].float(), radiances[ix][:(FLAGS.nb_classes - output_ix)].float())  # MSE for autoencoder loss
                             loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + FLAGS.auto_weight)
                         loss /= labeled_mask.shape[0]
 

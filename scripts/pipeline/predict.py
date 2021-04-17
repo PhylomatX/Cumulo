@@ -11,7 +11,6 @@ from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
 from cumulo.utils.evaluation import evaluate_file, evaluate_clouds, create_class_histograms
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
-from cumulo.models.iresnet import MultiscaleConvIResNet
 from absl import app
 from flags import FLAGS
 
@@ -24,19 +23,7 @@ def load_model(model_dir):
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
     elif FLAGS.model == 'iresnet':
-        nb_blocks = [4, 4, 4, 4, 4]
-        nb_strides = [1, 2, 2, 2, 2]
-        nb_channels = [4, 16, 32, 32, 32]
-        inj_pad = 0
-        coeff = 0.97
-        nb_trace_samples = 1
-        nb_series_terms = 1
-        nb_iter_norm = 5
-        in_shape = (13, FLAGS.tile_size, FLAGS.tile_size)
-        classification_weight = in_shape[0] * in_shape[1] * in_shape[2]
-        model = MultiscaleConvIResNet(in_shape, nb_blocks, nb_strides, nb_channels, False, inj_pad, coeff, FLAGS.nb_classes,
-                                      nb_trace_samples, nb_series_terms, nb_iter_norm, actnorm=True, learn_prior=True,
-                                      nonlin="elu", lin_classifier=True)
+        NotImplementedError()
     else:
         raise ValueError('Model type not known.')
     model_path = os.path.join(model_dir, FLAGS.model_name)
@@ -66,10 +53,7 @@ def predict_tiles(model, tiles, device, batch_size):
         # --- inference ---
         inputs = torch.from_numpy(batch).float()
         inputs = inputs.to(device)
-        if FLAGS.model == 'iresnet':
-            outputs, _, logpz, trace = model(inputs)
-        else:
-            outputs = model(inputs)
+        outputs = model(inputs)
         outputs = outputs.cpu().detach()
 
         if upper > tiles.shape[0]:
@@ -111,9 +95,9 @@ def main(_):
     model = load_model(FLAGS.m_path)
     model.to(device)
 
-    no_cloud_mask = False
+    no_cloud_mask_prediction = False
     if FLAGS.mask_weight == 0:
-        no_cloud_mask = True
+        no_cloud_mask_prediction = True
 
     if FLAGS.immediate_evaluation:
         total_report = ''
@@ -123,25 +107,8 @@ def main(_):
         total_probabilities = None
         total_outputs = None
 
-    swath_ix = 0
-    used = 0
-    prediction_number = len(dataset)
-    if FLAGS.prediction_number is not None:
-        prediction_number = FLAGS.prediction_number
-    while used < prediction_number:
-        swath = dataset[swath_ix]
+    for swath in tqdm(dataset):
         filename, radiances, locations, cloud_mask, labels = swath
-        if np.all(labels == -1):
-            swath_ix += 1
-            continue
-        else:
-            print(used)
-            used += 1
-            swath_ix += 1
-        # --- Mix tiles for potential improvement in BatchNorm ---
-        random_permutation = torch.randperm(radiances.shape[0])
-        radiances = radiances[random_permutation]
-        locations = locations[random_permutation]
 
         # --- Generate tile predictions and insert them into the swath ---
         predictions = predict_tiles(model, radiances, device, FLAGS.dataset_bs)
@@ -154,11 +121,10 @@ def main(_):
         labels = labels.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
-        outputs[3] = outputs[3] + 1
-
         if FLAGS.immediate_evaluation:
             filename = filename.replace(FLAGS.d_path, FLAGS.output_path + f'/').replace('.nc', '.npz')
-            report, probabilities, cloudy_labels, eval_outputs = evaluate_file(filename, outputs.copy(), labels.copy(), cloud_mask.copy(), label_names, mask_names, no_cloud_mask)
+            report, probabilities, cloudy_labels, eval_outputs = evaluate_file(filename, outputs.copy(), labels.copy(), cloud_mask.copy(), label_names, mask_names, no_cloud_mask_prediction)
+
             # --- Save intermediate report and merge probabilities and labels for total evaluation ---
             total_report += report
             with open(os.path.join(FLAGS.output_path, 'total/total_report.txt'), 'w') as f:
@@ -173,13 +139,13 @@ def main(_):
             else:
                 total_outputs = np.hstack((total_outputs, eval_outputs))
             outputs_to_figure_or_file(outputs, labels, cloud_mask, cloud_mask_as_binary=FLAGS.cloud_mask_as_binary,
-                                      to_file=FLAGS.to_file, npz_file=filename, no_cloud_mask_prediction=no_cloud_mask)
+                                      to_file=FLAGS.to_file, npz_file=filename, no_cloud_mask_prediction=no_cloud_mask_prediction)
         else:
             np.savez(os.path.join(FLAGS.output_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
                      outputs=outputs, labels=labels, cloud_mask=cloud_mask)
 
     if FLAGS.immediate_evaluation:
-        # --- Generate total evaluation and save final report ---
+        # --- Generate total evaluation and save final report and histograms ---
         with open(os.path.join(FLAGS.output_path, 'total/total_outputs.pkl'), 'wb') as f:
             pkl.dump(total_outputs, f)
         with open(os.path.join(FLAGS.output_path, 'total/total_labels.pkl'), 'wb') as f:

@@ -20,14 +20,13 @@ NO_LABEL = np.array([250., 250., 250.]) / 255  # white
 def prediction_to_continuous_rgb(prediction, cloud_mask_is_binary=True, cloud_mask=None):
     if cloud_mask is None:
         clouds = np.matmul(prediction[1:9, ...].transpose(), COLORS ** 2)
-    else:
-        clouds = np.matmul(prediction[:8, ...].transpose(), COLORS ** 2)
-    clouds = np.swapaxes(clouds, 0, 1)
-    if cloud_mask is None:
         if cloud_mask_is_binary:
             prediction[0][prediction[0] < 0.5] = 0
             prediction[0][prediction[0] >= 0.5] = 1
         cloud_mask = np.expand_dims(prediction[0], -1)
+    else:
+        clouds = np.matmul(prediction[:8, ...].transpose(), COLORS ** 2)
+    clouds = np.swapaxes(clouds, 0, 1)
     cloud_mask_prediction = np.expand_dims(cloud_mask, -1)
     prediction = clouds * cloud_mask_prediction + (1 - cloud_mask_prediction) * NO_CLOUD ** 2
     prediction = np.sqrt(prediction)

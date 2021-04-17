@@ -49,9 +49,9 @@ def include_cloud_mask(labels, cloud_mask):
     return labels * cloud_mask
 
 
-def probabilities_from_outputs(outputs, no_cloud_mask):
+def probabilities_from_outputs(outputs, no_cloud_mask_prediction):
     outputs = outputs.copy()
-    if no_cloud_mask:
+    if no_cloud_mask_prediction:
         outputs[0:8, ...] = ss.softmax(outputs[0:8, ...], axis=0)  # 8 channels were trained for cloud classes
     else:
         outputs[0, ...] = ss.expit(outputs[0, ...])  # first channel was trained for cloud mask
