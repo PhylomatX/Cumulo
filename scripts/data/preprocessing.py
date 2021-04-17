@@ -39,7 +39,7 @@ def main(_):
     for file in tqdm(files):
         filename = os.path.join(FLAGS.nc_path, file)
         try:
-            radiances, cloud_mask, labels = read_nc(filename)
+            radiances, cloud_mask, labels = read_nc(filename, filter_most_freqent=True)
         except:
             print('Invalid file')
             continue

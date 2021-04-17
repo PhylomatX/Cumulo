@@ -55,7 +55,7 @@ def sample_n_tiles_with_labels(radiances, cloud_mask, labels, n, tile_size=128, 
         potential_pixels = potential_pixels[idcs]
 
     # shift tiles randomly to avoid overfitting, but ensure that labels are within network output (in case of valid convolutions)
-    random_offsets = np.random.randint(-(tile_size // 2) + 1 + valid_convolution_offset, (tile_size // 2) - 1 - valid_convolution_offset, potential_pixels.shape)
+    random_offsets = np.random.randint(-(tile_size // 2) + valid_convolution_offset, (tile_size // 2) - valid_convolution_offset, potential_pixels.shape)
     potential_pixels += random_offsets
 
     swath_tuple = (radiances, cloud_mask, labels)
@@ -63,6 +63,8 @@ def sample_n_tiles_with_labels(radiances, cloud_mask, labels, n, tile_size=128, 
     for pixel in potential_pixels:
         ll = pixel - tile_size // 2
         ur = pixel + tile_size // 2
+        if tile_size % 2 != 0:
+            ur += 1
         for ix, variable in enumerate(swath_tuple):
             if ix == 0:
                 tiles[ix].append(variable[:, ll[0]:ur[0], ll[1]:ur[1]])  # radiances have shape (13, height, width)

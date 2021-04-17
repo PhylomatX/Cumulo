@@ -11,6 +11,7 @@ from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
 from cumulo.utils.evaluation import evaluate_file, evaluate_clouds, create_class_histograms
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
+from cumulo.models.iresnet import MultiscaleConvIResNet
 from absl import app
 from flags import FLAGS
 
@@ -22,6 +23,20 @@ def load_model(model_dir):
         model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
+    elif FLAGS.model == 'iresnet':
+        nb_blocks = [4, 4, 4, 4, 4]
+        nb_strides = [1, 2, 2, 2, 2]
+        nb_channels = [4, 16, 32, 32, 32]
+        inj_pad = 0
+        coeff = 0.97
+        nb_trace_samples = 1
+        nb_series_terms = 1
+        nb_iter_norm = 5
+        in_shape = (13, FLAGS.tile_size, FLAGS.tile_size)
+        classification_weight = in_shape[0] * in_shape[1] * in_shape[2]
+        model = MultiscaleConvIResNet(in_shape, nb_blocks, nb_strides, nb_channels, False, inj_pad, coeff, FLAGS.nb_classes,
+                                      nb_trace_samples, nb_series_terms, nb_iter_norm, actnorm=True, learn_prior=True,
+                                      nonlin="elu", lin_classifier=True)
     else:
         raise ValueError('Model type not known.')
     model_path = os.path.join(model_dir, FLAGS.model_name)
@@ -51,7 +66,10 @@ def predict_tiles(model, tiles, device, batch_size):
         # --- inference ---
         inputs = torch.from_numpy(batch).float()
         inputs = inputs.to(device)
-        outputs = model(inputs)
+        if FLAGS.model == 'iresnet':
+            outputs, _, logpz, trace = model(inputs)
+        else:
+            outputs = model(inputs)
         outputs = outputs.cpu().detach()
 
         if upper > tiles.shape[0]:
@@ -136,7 +154,7 @@ def main(_):
         labels = labels.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
-        outputs[3] = outputs[3] + 2
+        outputs[3] = outputs[3] + 1
 
         if FLAGS.immediate_evaluation:
             filename = filename.replace(FLAGS.d_path, FLAGS.output_path + f'/').replace('.nc', '.npz')

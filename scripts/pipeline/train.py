@@ -14,7 +14,9 @@ from cumulo import __file__ as arch_src
 from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet_weak import UNet_weak
 from cumulo.models.unet_equi import UNet_equi
+from cumulo.models.iresnet import MultiscaleConvIResNet
 from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
+from cumulo.utils.iresnet_utils import bits_per_dim
 from flags import FLAGS
 
 
@@ -43,10 +45,6 @@ def main(_):
     m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
     std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
-    custom_class_weights = np.ones_like(class_weights)
-    custom_class_weights[3] *= 5
-    class_weights = custom_class_weights
-
     if FLAGS.local_norm:
         print("Using local normalization.")
         normalizer = LocalNormalizer()
@@ -71,16 +69,21 @@ def main(_):
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
         np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), test_idx)
 
+    with open(FLAGS.nc_exclude_path, 'rb') as f:
+        exclude = pkl.load(f)
+
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
                                   tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
-                                  valid_convolution_offset=FLAGS.valid_convolution_offset, most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT)
+                                  valid_convolution_offset=FLAGS.valid_convolution_offset,
+                                  most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT,
+                                  exclude=exclude)
 
     if FLAGS.val:
         print("Training with validation!")
         val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
                                     tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
                                     valid_convolution_offset=FLAGS.valid_convolution_offset,
-                                    most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT)
+                                    most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT, exclude=exclude)
         datasets = {'train': train_dataset, 'val': val_dataset}
     else:
         print("Training without validation!")
@@ -91,6 +94,20 @@ def main(_):
         model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
+    elif FLAGS.model == 'iresnet':
+        nb_blocks = [4, 4, 4, 4, 4]
+        nb_strides = [1, 2, 2, 2, 2]
+        nb_channels = [4, 16, 32, 32, 32]
+        inj_pad = 0
+        coeff = 0.97
+        nb_trace_samples = 1
+        nb_series_terms = 1
+        nb_iter_norm = 5
+        in_shape = (13, FLAGS.tile_size, FLAGS.tile_size)
+        classification_weight = in_shape[0] * in_shape[1] * in_shape[2]
+        model = MultiscaleConvIResNet(in_shape, nb_blocks, nb_strides, nb_channels, False, inj_pad, coeff, FLAGS.nb_classes,
+                                      nb_trace_samples, nb_series_terms, nb_iter_norm, actnorm=True, learn_prior=True,
+                                      nonlin="elu", lin_classifier=True)
     else:
         raise NotImplementedError()
     print('Model initialized!')
@@ -119,6 +136,13 @@ def main(_):
             max_lr=2e-4,
             cycle_momentum=True if 'momentum' in optimizer.defaults else False
         )
+    elif FLAGS.model == 'iresnet':
+        lr_sched = torch.optim.lr_scheduler.CyclicLR(
+            optimizer,
+            base_lr=1e-5,
+            max_lr=1e-3,
+            cycle_momentum=True if 'momentum' in optimizer.defaults else False
+        )
 
     bce = nn.BCEWithLogitsLoss()
     class_loss = nn.CrossEntropyLoss(weight=class_weights.to(device))
@@ -132,10 +156,10 @@ def main(_):
     shutil.make_archive(backup_path, 'gztar', pkg_path)
 
     # Start training
-    train(model, FLAGS.m_path, datasets, bce, class_loss, auto_loss, optimizer, lr_sched, num_epochs=nb_epochs, device=device)
+    train(model, FLAGS.m_path, datasets, bce, class_loss, auto_loss, optimizer, lr_sched, num_epochs=nb_epochs, device=device, iresnet_class_weight=classification_weight)
 
 
-def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimizer, scheduler, num_epochs=1000, device='cuda'):
+def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimizer, scheduler, num_epochs=1000, device='cuda', iresnet_class_weight=1):
     best_acc = 0.0
     best_loss = None
     offset = FLAGS.valid_convolution_offset
@@ -183,35 +207,44 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
 
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(radiances.type(torch.float32))
-                    if offset > 0:
-                        labels = labels[:, offset:-offset, offset:-offset]
-                        cloud_mask = cloud_mask[:, offset:-offset, offset:-offset]
-                        radiances = radiances[..., offset:-offset, offset:-offset]
-                    labeled_mask = labels >= 0  # get labeled pixels (this includes labels in non-cloudy regions as well!)
-                    loss = 0
-                    for ix in range(labeled_mask.shape[0]):
-                        b_labeled_mask = labeled_mask[ix]
-                        b_labels = labels[ix][b_labeled_mask]
+                    if FLAGS.model == 'iresnet':
+                        radiances = radiances.type(torch.float32)
+                        outputs, _, logpz, trace = model(radiances)
+                        logpx = logpz + trace
+                        loss = bits_per_dim(logpx, radiances).mean()
+                        labels = torch.max(labels.reshape(labels.shape[0], -1), 1)[0]
+                        mean_entropy = class_loss_fn(outputs, labels.long())
+                        loss += iresnet_class_weight * mean_entropy
+                    else:
+                        outputs = model(radiances.type(torch.float32))
+                        if offset > 0:
+                            labels = labels[:, offset:-offset, offset:-offset]
+                            cloud_mask = cloud_mask[:, offset:-offset, offset:-offset]
+                            radiances = radiances[..., offset:-offset, offset:-offset]
+                        labeled_mask = labels >= 0  # get labeled pixels (this includes labels in non-cloudy regions as well!)
+                        loss = 0
+                        for ix in range(labeled_mask.shape[0]):
+                            b_labeled_mask = labeled_mask[ix]
+                            b_labels = labels[ix][b_labeled_mask]
 
-                        mask_loss = 0
-                        if FLAGS.mask_weight > 0:
-                            b_cloud_mask = cloud_mask[ix]
-                            mask_loss = FLAGS.mask_weight * bce_fn(outputs[ix][0], b_cloud_mask.float())  # BCEWithLogitsLoss for cloud mask
+                            mask_loss = 0
+                            if FLAGS.mask_weight > 0:
+                                b_cloud_mask = cloud_mask[ix]
+                                mask_loss = FLAGS.mask_weight * bce_fn(outputs[ix][0], b_cloud_mask.float())  # BCEWithLogitsLoss for cloud mask
 
-                        if FLAGS.mask_weight == 0:
-                            b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][0:8])
-                            b_outputs = outputs[ix][0:8][b_labeled_mask].reshape(8, -1).transpose(0, 1)
-                        else:
-                            b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][1:9])
-                            b_outputs = outputs[ix][1:9][b_labeled_mask].reshape(8, -1).transpose(0, 1)
-                        class_loss = FLAGS.class_weight * class_loss_fn(b_outputs, b_labels.long())  # CrossEntropy for labels
+                            if FLAGS.mask_weight == 0:
+                                b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][0:8])
+                                b_outputs = outputs[ix][0:8][b_labeled_mask].reshape(8, -1).transpose(0, 1)
+                            else:
+                                b_labeled_mask = b_labeled_mask.unsqueeze(0).expand_as(outputs[ix][1:9])
+                                b_outputs = outputs[ix][1:9][b_labeled_mask].reshape(8, -1).transpose(0, 1)
+                            class_loss = FLAGS.class_weight * class_loss_fn(b_outputs, b_labels.long())  # CrossEntropy for labels
 
-                        auto_loss = 0
-                        if FLAGS.auto_weight > 0:
-                            auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][9:].float(), radiances[ix][:(FLAGS.nb_classes - 9)].float())  # MSE for autoencoder loss
-                        loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + FLAGS.auto_weight)
-                    loss /= labeled_mask.shape[0]
+                            auto_loss = 0
+                            if FLAGS.auto_weight > 0:
+                                auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][9:].float(), radiances[ix][:(FLAGS.nb_classes - 9)].float())  # MSE for autoencoder loss
+                            loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + FLAGS.auto_weight)
+                        loss /= labeled_mask.shape[0]
 
                     if phase == 'train':
                         loss.backward()
@@ -232,7 +265,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                 labeled_mask = labels != -1
 
                 if FLAGS.mask_weight == 0:
-                    class_prediction = np.argmax(outputs[:, 0:8, ...], axis=1)
+                    class_prediction = np.argmax(outputs[:, :8, ...], axis=1)
                     mask_accuracy = 0.0
                 else:
                     mask_prediction = outputs[:, 0, ...]
