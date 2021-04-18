@@ -17,7 +17,7 @@ FLAGS = flags.FLAGS
 def main(_):
     dataset = CumuloDataset(FLAGS.path, batch_size=FLAGS.tile_number, tile_size=FLAGS.tile_size)
     sample_number = FLAGS.sample_number
-    if sample_number > len(dataset):
+    if sample_number is None or sample_number > len(dataset):
         sample_number = len(dataset)
     weights, class_weights, m, std = get_dataset_statistics(dataset, FLAGS.class_num, tile_size=FLAGS.tile_size, sample_number=sample_number)
     print(weights)
