@@ -60,17 +60,24 @@ def main(_):
     idx = np.arange(tile_num)
     np.random.shuffle(idx)
 
+    if FLAGS.demo:
+        np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), idx)
+        np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), idx)
+        np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), idx)
     try:
         train_idx = np.load(os.path.join(FLAGS.m_path, 'train_idx.npy'))
         val_idx = np.load(os.path.join(FLAGS.m_path, 'val_idx.npy'))
     except FileNotFoundError:
-        train_idx, val_idx, test_idx = np.split(idx, [int(.92 * tile_num), int(.97 * tile_num)])
+        train_idx, val_idx, test_idx = np.split(idx, [int(.92 * tile_num), int(.95 * tile_num)])
         np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
         np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
         np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), test_idx)
 
-    with open(FLAGS.nc_exclude_path, 'rb') as f:
-        exclude = pkl.load(f)
+    if FLAGS.nc_exclude_path is None:
+        exclude = []
+    else:
+        with open(FLAGS.nc_exclude_path, 'rb') as f:
+            exclude = pkl.load(f)
 
     train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
                                   tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
@@ -91,7 +98,8 @@ def main(_):
         datasets = {'train': train_dataset}
 
     # --- prepare model ---
-    if FLAGS.model == 'weak':
+    classification_weight = 0  # only used for iresnet
+    if FLAGS.model == 'unet':
         model = UNet(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
@@ -123,7 +131,7 @@ def main(_):
     # lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
 
     # --- base_lr and max_lr were found with the experimental procedure from https://arxiv.org/abs/1506.01186, section 3.3 (see above) ---
-    if FLAGS.model == 'weak':
+    if FLAGS.model == 'unet':
         lr_sched = torch.optim.lr_scheduler.CyclicLR(
             optimizer,
             base_lr=1e-6,
@@ -144,6 +152,8 @@ def main(_):
             max_lr=1e-3,
             cycle_momentum=True if 'momentum' in optimizer.defaults else False
         )
+    else:
+        raise NotImplementedError()
 
     bce = nn.BCEWithLogitsLoss()
     class_loss = nn.CrossEntropyLoss(weight=class_weights.to(device))
@@ -176,7 +186,6 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
             # batch size here should be 1 if the CumuloDataset already returns batches
             dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.bs,
                                                              num_workers=FLAGS.num_workers)
-
         torch.manual_seed(epoch)
         torch.cuda.manual_seed(epoch)
         np.random.seed(epoch)

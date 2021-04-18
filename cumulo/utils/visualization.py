@@ -34,7 +34,7 @@ def prediction_to_continuous_rgb(probabilities, make_cloud_mask_binary=True, clo
         if make_cloud_mask_binary:
             probabilities[0][probabilities[0] < 0.5] = 0
             probabilities[0][probabilities[0] >= 0.5] = 1
-        cloud_mask = np.expand_dims(probabilities[0], -1)
+        cloud_mask = probabilities[0]
     else:
         clouds = np.matmul(probabilities[:8, ...].transpose(), COLORS ** 2)
     clouds = np.swapaxes(clouds, 0, 1)

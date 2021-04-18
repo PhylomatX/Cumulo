@@ -118,20 +118,15 @@ def get_dataset_statistics(dataset, class_number, tile_size, sample_number=None)
             labels_ = labels[i].numpy()
             weights += np.histogram(labels_, bins=range(class_number + 1), normed=False)[0]
             mean += np.mean(radiances_, axis=(1, 2))
-        print(f"sample: {sample}")
-        print(f"weights: {weights / np.sum(weights)}")
-        print(f"mean: {mean / (sample * radiances.shape[0])}")
 
     mean /= tile_number
     mean = mean.reshape((13, 1, 1))
 
     for sample in tqdm(range(sample_number)):
-        radiances, labels = dataset[sample]
+        radiances, labels, _ = dataset[sample]
         for i in range(batch_size):
             radiances_ = radiances[i].numpy()
             variance += np.sum((radiances_ - mean)**2, (1, 2))
-        print(f"weights: {weights / np.sum(weights)}")
-        print(f"mean: {mean}")
 
     variance /= tile_number * tile_size ** 2
     std = np.sqrt(variance)

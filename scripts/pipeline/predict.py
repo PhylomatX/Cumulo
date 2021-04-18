@@ -18,7 +18,7 @@ from flags import FLAGS
 
 
 def load_model(model_dir):
-    if FLAGS.model == 'weak':
+    if FLAGS.model == 'unet':
         model = UNet(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
@@ -84,10 +84,17 @@ def main(_):
         print(f"Found test set with {len(test_idx)} files.")
     except FileNotFoundError:
         test_idx = None
+
+    if FLAGS.nc_exclude_path is None:
+        exclude = []
+    else:
+        with open(FLAGS.nc_exclude_path, 'rb') as f:
+            exclude = pkl.load(f)
+
     dataset = CumuloDataset(d_path=FLAGS.d_path, normalizer=normalizer, indices=test_idx, prediction_mode=True,
                             tile_size=FLAGS.tile_size, valid_convolution_offset=FLAGS.valid_convolution_offset,
-                            most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT)
-    print(f"Predicting {len(dataset)} files.")
+                            most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT, exclude=exclude)
+    print(f"Predicting {FLAGS.prediction_number} files.")
 
     device = 'cpu'
     if torch.cuda.is_available():
@@ -107,8 +114,8 @@ def main(_):
         total_probabilities = None
         total_outputs = None
 
-    for swath in tqdm(dataset):
-        filename, radiances, locations, cloud_mask, labels = swath
+    for ix in tqdm(range(FLAGS.prediction_number)):
+        filename, radiances, locations, cloud_mask, labels = dataset[ix]
 
         # --- Generate tile predictions and insert them into the swath ---
         predictions = predict_tiles(model, radiances, device, FLAGS.dataset_bs)

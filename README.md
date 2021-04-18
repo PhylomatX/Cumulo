@@ -8,29 +8,27 @@ were adapted from https://github.com/LobellLab/weakly_supervised.
 
 ## Installation
 
+The installation has been tested with python 3.8.5.
+
 ```
 cd cumulo
 pip install -e .
-```
-
-The requirements.txt contains all python 3.8.5 libraries from a standard envrionment on ubuntu 20.04 together with the
-essential libraries for this project:
-
-```
-absl-py==0.12.0
-e2cnn==0.1.7
-netCDF4==1.5.1.2
-torch==1.5.0
-tqdm==4.60.0
+pip install -r requirements.txt
 ```
 
 ## Demo
 
+This demo first preprocesses the nc files by filtering artefacts and finding files without labels. Then, the 
+dataset statistics are calculated with 16 tiles per nc file. Next, a model is trained on the demo data, excluding
+nc_files without labels. Last, the trained model is used to predict the demo data and the predictions get evaluated.
+This is just a demo and just demonstrates the use of the commands. It does not produce meaningful results.
+
 ```
-mkdir -p /tmp/models
 cd cumulo
-python scripts/pipeline/train.py --m_path /tmp/models/demo_training --d_path demo_data/ --model unet --epoch_number 5
-python scripts/pipeline/predict.py --flagfile /tmp/models/demo_training/flagfile.txt --output_path /tmp/models/demo_training/predictions --prediction_number 50
+python scripts/preprocessing/filter_artefacts_and_nolabels.py --path ./demo_data --removed_path ./artefacts
+python scripts/preprocessing/calculate_statistics.py --path ./demo_data --tile_number 16
+python scripts/pipeline/train.py --m_path ./models/demo_training --d_path ./demo_data --model unet --epoch_number 5 --nc_exclude_path ./demo_data/no_labels.pkl --demo 
+python scripts/pipeline/predict.py --flagfile ./models/demo_training/flagfile.txt --output_path ./models/demo_training/predictions --prediction_number 2
 ```
 
 
@@ -43,15 +41,15 @@ All examples assume that this repository is the current folder.
 + #### preprocessing
 
     + **calculate_statistics.py**: Can be used to calculate mean, variance and class weights for a given dataset. Example:
-    `python scripts/calculate_statistics.py --path <data_path> --sample_number 1000 --tile_number 16` to use 16 tiles of 
-    1000 nc files for calculating the statistic.  
+    `python scripts/preprocessing/calculate_statistics.py --path <data_path> --sample_number 10 --tile_number 16` to use 
+    16 tiles of 10 nc files for calculating the statistic.  
 
     + **filter_artefacts_and_nolabels.py**: The CUMULO dataset contains nc files where missing data was filled up 
     with the nearest available data. This script can be used to filter these artefacts (vertical lines with equal 
     values). There also exist nc files without labels. This script creates a list of these files which can be used 
-    to exclude them from training. Example:`python scripts/filter_artefacts_and_nolabels.py --path <data_path>
-    --removed_path <other_path>` to sort nc files with artefacts into 'other_path' and to save a list of nc files
-    without labels in 'data_path'
+    to exclude them from training. Example:`python scripts/preprocessing/filter_artefacts_and_nolabels.py --path 
+    <data_path> --removed_path <other_path>` to sort nc files with artefacts into 'other_path' and to save a list 
+    of nc files without labels in 'data_path'.
 
 
 + #### pipeline

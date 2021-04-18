@@ -75,12 +75,12 @@ def create_histogram(class_predictions, file, labels):
     for ix, class_prediction in enumerate(class_predictions):
         # --- determine bin number with Freedman-Diaconis rule ---
         n = len(class_prediction)
-        sorted_cloudy = np.sort(class_prediction)
-        q1 = np.median(sorted_cloudy[:int(n / 2)])
-        q3 = np.median(sorted_cloudy[-int(n / 2):])
+        sorted_predictions = np.sort(class_prediction)
+        q1 = np.median(sorted_predictions[:int(n / 2)])
+        q3 = np.median(sorted_predictions[-int(n / 2):])
         bin_width = 2 * (q3 - q1) / np.cbrt(n)
         bin_num = int(1 / bin_width)
-        cloudy_n, _, _ = plt.hist(class_prediction, density=True, bins=bin_num, histtype='step', label=labels[ix])
+        _, _, _ = plt.hist(class_prediction, density=True, bins=bin_num, histtype='step', label=labels[ix])
     plt.xlabel('Network output after softmax')
     plt.ylabel('Normalized counts')
     plt.legend()
@@ -99,6 +99,7 @@ def create_class_histograms(outputs, labels, path):
             _ = axs[i].hist(outputs[labels == label][:, i], bins=100, alpha=0.8, label=i, range=(-20, 20))
             axs[i].set_title(i)
         plt.savefig(os.path.join(path, f'{label}.png'))
+    plt.close()
 
 
 def evaluate_cloud_mask(mask_predictions, mask, mask_names, npz_file, detailed=False):
@@ -129,14 +130,14 @@ def evaluate_cloud_mask(mask_predictions, mask, mask_names, npz_file, detailed=F
 
 
 def evaluate_clouds(probabilities, labels, label_names, npz_file, detailed=False):
-    hard_cloudy_predictions = np.argmax(probabilities, 0).reshape(-1)
+    hard_predictions = np.argmax(probabilities, 0).reshape(-1)
 
-    report = sm.classification_report(labels, hard_cloudy_predictions, labels=label_names, zero_division=0)
-    matrix = sm.confusion_matrix(labels, hard_cloudy_predictions, labels=label_names)
-    matrix_string = write_confusion_matrix(matrix, get_target_names(labels, hard_cloudy_predictions, label_names))
+    report = sm.classification_report(labels, hard_predictions, labels=label_names, zero_division=0)
+    matrix = sm.confusion_matrix(labels, hard_predictions, labels=label_names)
+    matrix_string = write_confusion_matrix(matrix, get_target_names(labels, hard_predictions, label_names))
 
     if detailed:
-        report_dict = sm.classification_report(labels, hard_cloudy_predictions, labels=label_names, zero_division=0, output_dict=True)
+        report_dict = sm.classification_report(labels, hard_predictions, labels=label_names, zero_division=0, output_dict=True)
         with open(npz_file.replace('.npz', '_report.pkl'), 'wb') as f:
             pkl.dump(report_dict, f)
         with open(npz_file.replace('.npz', '_matrix.pkl'), 'wb') as f:
@@ -148,7 +149,7 @@ def evaluate_clouds(probabilities, labels, label_names, npz_file, detailed=False
         plt.savefig(npz_file.replace('.npz', '_matrix.png'))
         plt.close()
 
-        class_matrix_normalized = sm.confusion_matrix(labels, hard_cloudy_predictions, normalize='true', labels=label_names)
+        class_matrix_normalized = sm.confusion_matrix(labels, hard_predictions, normalize='true', labels=label_names)
         class_matrix_disp = sm.ConfusionMatrixDisplay(class_matrix_normalized, display_labels=label_names)
         class_matrix_disp.plot(include_values=False, cmap='Reds')
         plt.savefig(npz_file.replace('.npz', '_matrix_normalized.png'))
@@ -209,24 +210,24 @@ def evaluate_file(file, outputs, labels, cloud_mask, label_names, mask_names, no
     """
     labels = labels.reshape(-1)
     cloud_mask = cloud_mask.reshape(-1)
-    cloudy_labels_mask = labels != -1  # use all existing labels (also non-cloudy ones)
-    cloudy_labels = labels[cloudy_labels_mask]
+    labels_mask = labels != -1  # use all existing labels (also non-cloudy ones)
+    masked_labels = labels[labels_mask]
     probabilities = probabilities_from_outputs(outputs, no_cloud_mask_prediction)
     if no_cloud_mask_prediction:
-        cloudy_class_probabilities = probabilities[0:8].reshape(8, -1)[:, cloudy_labels_mask]
-        outputs = outputs[0:8].reshape(8, -1)[:, cloudy_labels_mask]
+        class_probabilities = probabilities[0:8].reshape(8, -1)[:, labels_mask]
+        outputs = outputs[0:8].reshape(8, -1)[:, labels_mask]
     else:
         mask_probabilities = probabilities[0].copy().reshape(-1)
-        cloudy_class_probabilities = probabilities[1:9].reshape(8, -1)[:, cloudy_labels_mask]
-        outputs = outputs[1:9].reshape(8, -1)[:, cloudy_labels_mask]
+        class_probabilities = probabilities[1:9].reshape(8, -1)[:, labels_mask]
+        outputs = outputs[1:9].reshape(8, -1)[:, labels_mask]
 
     # --- Generate file-wise evaluation ---
     report = f"#### {file} ####\n\n"
     if not no_cloud_mask_prediction:
         mask_report = evaluate_cloud_mask(mask_probabilities, cloud_mask, mask_names, file)
         report += 'Cloud mask eval:\n\n' + mask_report + '\n\n'
-    class_report, class_matrix = evaluate_clouds(cloudy_class_probabilities, cloudy_labels, label_names, file)
+    class_report, class_matrix = evaluate_clouds(class_probabilities, masked_labels, label_names, file)
     report += 'Cloud class eval:\n\n' + class_report + '\n\n'
     report += class_matrix + '\n\n\n\n'
 
-    return report, cloudy_class_probabilities, cloudy_labels, outputs
+    return report, class_probabilities, masked_labels, outputs

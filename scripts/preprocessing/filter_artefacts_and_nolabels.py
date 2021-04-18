@@ -44,6 +44,8 @@ def main(_):
             print('Invalid file')
             continue
         if check_size(radiances) or check_for_stripe_pattern(radiances):
+            if not os.path.exists(FLAGS.removed_path):
+                os.makedirs(FLAGS.removed_path)
             os.rename(filename, filename.replace(FLAGS.path, FLAGS.removed_path))
             removed += 1
         elif np.all(labels == -1):
