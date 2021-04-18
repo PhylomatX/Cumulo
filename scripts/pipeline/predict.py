@@ -9,7 +9,7 @@ from cumulo.data.loader import CumuloDataset
 from cumulo.utils.visualization import outputs_to_figure_or_file
 from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
 from cumulo.utils.evaluation import evaluate_file, evaluate_clouds, create_class_histograms
-from cumulo.models.unet_weak import UNet_weak
+from cumulo.models.unet import UNet
 from cumulo.models.unet_equi import UNet_equi
 from absl import app
 from flags import FLAGS
@@ -19,7 +19,7 @@ from flags import FLAGS
 
 def load_model(model_dir):
     if FLAGS.model == 'weak':
-        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
+        model = UNet(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
     elif FLAGS.model == 'iresnet':

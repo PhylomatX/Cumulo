@@ -6,7 +6,7 @@ import pickle as pkl
 from tqdm import tqdm
 from cumulo.utils.basics import read_nc
 
-flags.DEFINE_string('nc_path', None, help='Directory where nc files are located.')
+flags.DEFINE_string('path', None, help='Directory where nc files are located.')
 flags.DEFINE_string('removed_path', None, help='Directory where removed nc files should get saved.')
 FLAGS = flags.FLAGS
 
@@ -33,24 +33,24 @@ def check_for_stripe_pattern(radiances) -> bool:
 
 
 def main(_):
-    files = os.listdir(FLAGS.nc_path)
+    files = os.listdir(FLAGS.path)
     no_labels = []
     removed = 0
     for file in tqdm(files):
-        filename = os.path.join(FLAGS.nc_path, file)
+        filename = os.path.join(FLAGS.path, file)
         try:
             radiances, cloud_mask, labels = read_nc(filename, filter_most_freqent=True)
         except:
             print('Invalid file')
             continue
         if check_size(radiances) or check_for_stripe_pattern(radiances):
-            os.rename(filename, filename.replace(FLAGS.nc_path, FLAGS.removed_path))
+            os.rename(filename, filename.replace(FLAGS.path, FLAGS.removed_path))
             removed += 1
         elif np.all(labels == -1):
             print('No labels!')
             no_labels.append(file)
     print(f'{removed} nc files have been removed because of artefacts.')
-    with open(os.path.join(FLAGS.nc_path, 'no_labels.pkl'), 'wb') as f:
+    with open(os.path.join(FLAGS.path, 'no_labels.pkl'), 'wb') as f:
         pkl.dump(no_labels, f)
 
 

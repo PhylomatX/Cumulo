@@ -40,6 +40,15 @@ class CumuloDataset(Dataset):
 
     # noinspection PyUnboundLocalVariable
     def __getitem__(self, idx):
+        """
+        In prediction mode, this function divides a swath into tiles which fully cover the swath. In training mode,
+        it draws `self.batch_size` (randomly shifted) tiles from the current nc file. nc file loading is costly. This
+        method has been tested against generating and saving the tiles as npz files before training. Loading nc files
+        directly was equally fast and provides more flexibility.
+
+        When using this dataset with multiple parallel workers, each worker opens only one nc file, draws multiple tiles
+        and therefore returns a batch of tiles.
+        """
         if self.prediction_mode:
             radiances, cloud_mask, labels = read_nc(self.file_paths[idx], filter_most_freqent=self.most_frequent_clouds_as_GT)
             radiances, locations = divide_into_tiles(self.tile_size, self.valid_convolution_offset, radiances)

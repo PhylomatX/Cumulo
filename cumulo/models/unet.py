@@ -1,3 +1,7 @@
+"""
+Adapted from https://github.com/LobellLab/weakly_supervised
+"""
+
 import torch
 import torch.nn as nn
 
@@ -63,10 +67,10 @@ def extract_img(size, in_tensor):
     return in_tensor
 
 
-class UNet_weak(nn.Module):
+class UNet(nn.Module):
 
     def __init__(self, in_channels, out_channels, starting_filters=32, norm='bn', padding=0):
-        super(UNet_weak, self).__init__()
+        super(UNet, self).__init__()
         self.conv1 = DownConv(in_channels, starting_filters, norm, padding=padding)
         self.conv2 = DownConv(starting_filters, starting_filters * 2, norm, padding=padding)
         self.conv3 = DownConv(starting_filters * 2, starting_filters * 4, norm, padding=padding)

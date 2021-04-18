@@ -17,6 +17,7 @@ flags.DEFINE_string('d_path', '/storage/group/dataset_mirrors/01_incoming/satell
 flags.DEFINE_string('m_path', None, help='Model path')
 flags.DEFINE_string('filetype', 'nc', help='File type for dataset')
 flags.DEFINE_integer('r_seed', 1, help='Random seed')
+flags.DEFINE_integer('epoch_number', 200, help='Number of epochs')
 flags.DEFINE_integer('nb_epochs', 200, help='Number of epochs')
 flags.DEFINE_integer('num_workers', 4, help='Number of workers for the dataloader.')
 flags.DEFINE_integer('bs', 1, help='Batch size for training and validation.')

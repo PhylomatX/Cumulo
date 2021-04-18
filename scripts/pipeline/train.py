@@ -12,7 +12,7 @@ import faulthandler
 import shutil
 from cumulo import __file__ as arch_src
 from cumulo.data.loader import CumuloDataset
-from cumulo.models.unet_weak import UNet_weak
+from cumulo.models.unet import UNet
 from cumulo.models.unet_equi import UNet_equi
 from cumulo.models.iresnet import MultiscaleConvIResNet
 from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
@@ -21,8 +21,8 @@ from flags import FLAGS
 
 
 def main(_):
-    nb_epochs = FLAGS.nb_epochs
-    lr = 1e-3
+    epoch_number = FLAGS.epoch_number
+    learning_rate = 1e-3
     weight_decay = 0.5e-4
 
     torch.manual_seed(FLAGS.r_seed)
@@ -42,7 +42,7 @@ def main(_):
     print("using GPUs?", torch.cuda.is_available())
 
     class_weights = np.load(os.path.join(FLAGS.d_path, "class-weights.npy"))
-    m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
+    mean = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
     std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
 
     if FLAGS.local_norm:
@@ -50,7 +50,7 @@ def main(_):
         normalizer = LocalNormalizer()
     else:
         print("Using global normalization.")
-        normalizer = GlobalNormalizer(m, std)
+        normalizer = GlobalNormalizer(mean, std)
     class_weights = torch.from_numpy(class_weights).float()
 
     if FLAGS.tile_num is None:
@@ -92,7 +92,7 @@ def main(_):
 
     # --- prepare model ---
     if FLAGS.model == 'weak':
-        model = UNet_weak(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
+        model = UNet(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
     elif FLAGS.model == 'equi':
         model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
     elif FLAGS.model == 'iresnet':
@@ -115,9 +115,9 @@ def main(_):
     model = model.to(device)
 
     # Prepare training environment
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    # Begin with a very small lr and double it every 100 steps.
+    # Begin with a very small learning rate and double it every 100 steps.
     # for grp in optimizer.param_groups:
     #     grp['lr'] = 1e-7
     # lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
@@ -157,7 +157,7 @@ def main(_):
     shutil.make_archive(backup_path, 'gztar', pkg_path)
 
     # Start training
-    train(model, FLAGS.m_path, datasets, bce, class_loss, auto_loss, optimizer, lr_sched, num_epochs=nb_epochs, device=device, iresnet_class_weight=classification_weight)
+    train(model, FLAGS.m_path, datasets, bce, class_loss, auto_loss, optimizer, lr_sched, num_epochs=epoch_number, device=device, iresnet_class_weight=classification_weight)
 
 
 def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimizer, scheduler, num_epochs=1000, device='cuda', iresnet_class_weight=1):
@@ -173,6 +173,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
     for epoch in range(num_epochs):
         dataloaders = {}
         for phase in datasets:
+            # batch size here should be 1 if the CumuloDataset already returns batches
             dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.bs,
                                                              num_workers=FLAGS.num_workers)
 
