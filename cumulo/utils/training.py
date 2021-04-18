@@ -62,15 +62,18 @@ def sample_n_tiles_with_labels(radiances, cloud_mask, labels, n, tile_size, vali
         idcs = np.random.choice(np.arange(len(potential_pixels)), n, replace=False)
         potential_pixels = potential_pixels[idcs]
     else:
-        # --- if there are not enough labeled pixels, multiple tiles are extracted around single pixels ---
+        # --- if there are not enough labeled pixels, multiple tiles are extracted around single pixels.
+        # This normally doesn't happen as most nc files contain more than 128 labeled pixels and normal
+        # batch sizes for U-Nets are not larger than 32. ---
         while len(potential_pixels) < n:
             potential_pixels = np.vstack((potential_pixels, potential_pixels_cache))
         idcs = np.random.choice(np.arange(len(potential_pixels)), n, replace=False)
         potential_pixels = potential_pixels[idcs]
 
-    # --- shift tiles randomly to avoid overfitting, but ensure that labels are within network output (in case of valid convolutions) ---
-    random_offsets = np.random.randint(-(tile_size // 2) + valid_convolution_offset, (tile_size // 2) - valid_convolution_offset, potential_pixels.shape)
-    potential_pixels += random_offsets
+    if tile_size > 3:
+        # --- shift tiles randomly to avoid overfitting, but ensure that labels are within network output (in case of valid convolutions) ---
+        random_offsets = np.random.randint(-(tile_size // 2) + valid_convolution_offset + 1, (tile_size // 2) - valid_convolution_offset - 1, potential_pixels.shape)
+        potential_pixels += random_offsets
 
     swath_tuple = (radiances, cloud_mask, labels)
     tiles = [[] for _ in swath_tuple]

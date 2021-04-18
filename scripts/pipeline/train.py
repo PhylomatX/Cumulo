@@ -15,7 +15,7 @@ from cumulo.data.loader import CumuloDataset
 from cumulo.models.unet import UNet
 from cumulo.models.unet_equi import UNet_equi
 from cumulo.models.iresnet import MultiscaleConvIResNet
-from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
+from cumulo.utils.training import GlobalNormalizer
 from cumulo.utils.iresnet_utils import bits_per_dim
 from flags import FLAGS
 
@@ -25,53 +25,46 @@ def main(_):
     learning_rate = 1e-3
     weight_decay = 0.5e-4
 
-    torch.manual_seed(FLAGS.r_seed)
-    torch.cuda.manual_seed(FLAGS.r_seed)
-    np.random.seed(FLAGS.r_seed)
-    random.seed(FLAGS.r_seed)
+    torch.manual_seed(FLAGS.random_seed)
+    torch.cuda.manual_seed(FLAGS.random_seed)
+    np.random.seed(FLAGS.random_seed)
+    random.seed(FLAGS.random_seed)
     torch.backends.cudnn.deterministic = True
     faulthandler.enable()
 
-    if not os.path.exists(FLAGS.m_path):
-        os.makedirs(FLAGS.m_path)
-        os.makedirs(os.path.join(FLAGS.m_path, 'examples'))
+    if not os.path.exists(FLAGS.model_path):
+        os.makedirs(FLAGS.model_path)
+        os.makedirs(os.path.join(FLAGS.model_path, 'examples'))
 
     device = 'cpu'
     if torch.cuda.is_available():
         device = 'cuda'
     print("using GPUs?", torch.cuda.is_available())
 
-    class_weights = np.load(os.path.join(FLAGS.d_path, "class-weights.npy"))
-    mean = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
-    std = np.load(os.path.join(FLAGS.d_path, "std.npy"))
+    class_weights = np.load(os.path.join(FLAGS.data_path, "class-weights.npy"))
+    mean = np.load(os.path.join(FLAGS.data_path, "mean.npy"))
+    std = np.load(os.path.join(FLAGS.data_path, "std.npy"))
 
-    if FLAGS.local_norm:
-        print("Using local normalization.")
-        normalizer = LocalNormalizer()
-    else:
-        print("Using global normalization.")
-        normalizer = GlobalNormalizer(mean, std)
+    normalizer = GlobalNormalizer(mean, std)
     class_weights = torch.from_numpy(class_weights).float()
 
-    if FLAGS.tile_num is None:
-        tile_num = len(glob.glob(os.path.join(FLAGS.d_path, "*." + FLAGS.filetype)))
+    if FLAGS.file_number is None:
+        file_number = len(glob.glob(os.path.join(FLAGS.data_path, "*." + FLAGS.filetype)))
     else:
-        tile_num = FLAGS.tile_num
-    idx = np.arange(tile_num)
+        file_number = FLAGS.file_number
+    idx = np.arange(file_number)
     np.random.shuffle(idx)
 
     if FLAGS.demo:
-        np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), idx)
-        np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), idx)
-        np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), idx)
-    try:
-        train_idx = np.load(os.path.join(FLAGS.m_path, 'train_idx.npy'))
-        val_idx = np.load(os.path.join(FLAGS.m_path, 'val_idx.npy'))
-    except FileNotFoundError:
-        train_idx, val_idx, test_idx = np.split(idx, [int(.92 * tile_num), int(.95 * tile_num)])
-        np.save(os.path.join(FLAGS.m_path, 'train_idx.npy'), train_idx)
-        np.save(os.path.join(FLAGS.m_path, 'val_idx.npy'), val_idx)
-        np.save(os.path.join(FLAGS.m_path, 'test_idx.npy'), test_idx)
+        train_idx, val_idx, test_idx = idx, idx, idx
+        np.save(os.path.join(FLAGS.model_path, 'train_idx.npy'), idx)
+        np.save(os.path.join(FLAGS.model_path, 'val_idx.npy'), idx)
+        np.save(os.path.join(FLAGS.model_path, 'test_idx.npy'), idx)
+    else:
+        train_idx, val_idx, test_idx = np.split(idx, [int(.92 * file_number), int(.95 * file_number)])
+        np.save(os.path.join(FLAGS.model_path, 'train_idx.npy'), train_idx)
+        np.save(os.path.join(FLAGS.model_path, 'val_idx.npy'), val_idx)
+        np.save(os.path.join(FLAGS.model_path, 'test_idx.npy'), test_idx)
 
     if FLAGS.nc_exclude_path is None:
         exclude = []
@@ -79,15 +72,15 @@ def main(_):
         with open(FLAGS.nc_exclude_path, 'rb') as f:
             exclude = pkl.load(f)
 
-    train_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.dataset_bs,
+    train_dataset = CumuloDataset(FLAGS.data_path, normalizer=normalizer, indices=train_idx, batch_size=FLAGS.batch_size,
                                   tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
                                   valid_convolution_offset=FLAGS.valid_convolution_offset,
                                   most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT,
                                   exclude=exclude, filter_cloudy_labels=FLAGS.filter_cloudy_labels)
 
-    if FLAGS.val:
+    if FLAGS.use_validation:
         print("Training with validation!")
-        val_dataset = CumuloDataset(FLAGS.d_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.dataset_bs,
+        val_dataset = CumuloDataset(FLAGS.data_path, normalizer=normalizer, indices=val_idx, batch_size=FLAGS.batch_size,
                                     tile_size=FLAGS.tile_size, rotation_probability=FLAGS.rotation_probability,
                                     valid_convolution_offset=FLAGS.valid_convolution_offset,
                                     most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT, exclude=exclude,
@@ -99,10 +92,10 @@ def main(_):
 
     # --- prepare model ---
     classification_weight = 0  # only used for iresnet
-    if FLAGS.model == 'unet':
-        model = UNet(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
+    if FLAGS.model in ['unet', 'weak']:
+        model = UNet(in_channels=13, out_channels=FLAGS.class_number, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.normalization)
     elif FLAGS.model == 'equi':
-        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
+        model = UNet_equi(in_channels=13, out_channels=FLAGS.class_number, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.normalization, rot=FLAGS.rotations)
     elif FLAGS.model == 'iresnet':
         nb_blocks = [4, 4, 4, 4, 4]
         nb_strides = [1, 2, 2, 2, 2]
@@ -114,7 +107,7 @@ def main(_):
         nb_iter_norm = 5
         in_shape = (13, FLAGS.tile_size, FLAGS.tile_size)
         classification_weight = in_shape[0] * in_shape[1] * in_shape[2]
-        model = MultiscaleConvIResNet(in_shape, nb_blocks, nb_strides, nb_channels, False, inj_pad, coeff, FLAGS.nb_classes,
+        model = MultiscaleConvIResNet(in_shape, nb_blocks, nb_strides, nb_channels, False, inj_pad, coeff, FLAGS.class_number,
                                       nb_trace_samples, nb_series_terms, nb_iter_norm, actnorm=True, learn_prior=True,
                                       nonlin="elu", lin_classifier=True)
     else:
@@ -130,44 +123,47 @@ def main(_):
     #     grp['lr'] = 1e-7
     # lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 2)
 
-    # --- base_lr and max_lr were found with the experimental procedure from https://arxiv.org/abs/1506.01186, section 3.3 (see above) ---
-    if FLAGS.model == 'unet':
-        lr_sched = torch.optim.lr_scheduler.CyclicLR(
-            optimizer,
-            base_lr=1e-6,
-            max_lr=1e-4,
-            cycle_momentum=True if 'momentum' in optimizer.defaults else False
-        )
-    elif FLAGS.model == 'equi':
-        lr_sched = torch.optim.lr_scheduler.CyclicLR(
-            optimizer,
-            base_lr=1.2e-5,
-            max_lr=2e-4,
-            cycle_momentum=True if 'momentum' in optimizer.defaults else False
-        )
-    elif FLAGS.model == 'iresnet':
-        lr_sched = torch.optim.lr_scheduler.CyclicLR(
-            optimizer,
-            base_lr=1e-5,
-            max_lr=1e-3,
-            cycle_momentum=True if 'momentum' in optimizer.defaults else False
-        )
+    if FLAGS.demo:
+        lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, 100, 0.5)
     else:
-        raise NotImplementedError()
+        # --- base_lr and max_lr were found with the experimental procedure from https://arxiv.org/abs/1506.01186, section 3.3 (see above) ---
+        if FLAGS.model in ['unet', 'weak']:
+            lr_sched = torch.optim.lr_scheduler.CyclicLR(
+                optimizer,
+                base_lr=1e-6,
+                max_lr=1e-4,
+                cycle_momentum=True if 'momentum' in optimizer.defaults else False
+            )
+        elif FLAGS.model == 'equi':
+            lr_sched = torch.optim.lr_scheduler.CyclicLR(
+                optimizer,
+                base_lr=1.2e-5,
+                max_lr=2e-4,
+                cycle_momentum=True if 'momentum' in optimizer.defaults else False
+            )
+        elif FLAGS.model == 'iresnet':
+            lr_sched = torch.optim.lr_scheduler.CyclicLR(
+                optimizer,
+                base_lr=1e-5,
+                max_lr=1e-3,
+                cycle_momentum=True if 'momentum' in optimizer.defaults else False
+            )
+        else:
+            raise NotImplementedError()
 
     bce = nn.BCEWithLogitsLoss()
     class_loss = nn.CrossEntropyLoss(weight=class_weights.to(device))
     auto_loss = nn.MSELoss()
 
     # backup training script and src folder
-    shutil.copyfile(__file__, FLAGS.m_path + '/0-' + os.path.basename(__file__))
-    os.chmod(FLAGS.m_path + '/0-' + os.path.basename(__file__), 0o755)
+    shutil.copyfile(__file__, FLAGS.model_path + '/0-' + os.path.basename(__file__))
+    os.chmod(FLAGS.model_path + '/0-' + os.path.basename(__file__), 0o755)
     pkg_path = os.path.dirname(arch_src)
-    backup_path = os.path.join(FLAGS.m_path, 'src_backup')
+    backup_path = os.path.join(FLAGS.model_path, 'src_backup')
     shutil.make_archive(backup_path, 'gztar', pkg_path)
 
     # Start training
-    train(model, FLAGS.m_path, datasets, bce, class_loss, auto_loss, optimizer, lr_sched, num_epochs=epoch_number, device=device, iresnet_class_weight=classification_weight)
+    train(model, FLAGS.model_path, datasets, bce, class_loss, auto_loss, optimizer, lr_sched, num_epochs=epoch_number, device=device, iresnet_class_weight=classification_weight)
 
 
 def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimizer, scheduler, num_epochs=1000, device='cuda', iresnet_class_weight=1):
@@ -175,7 +171,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
     best_loss = None
     offset = FLAGS.valid_convolution_offset
 
-    with open(os.path.join(FLAGS.m_path, 'flagfile.txt'), 'w') as f:
+    with open(os.path.join(FLAGS.model_path, 'flagfile.txt'), 'w') as f:
         f.writelines(FLAGS.flags_into_string())
 
     metrics = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
@@ -184,8 +180,8 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
         dataloaders = {}
         for phase in datasets:
             # batch size here should be 1 if the CumuloDataset already returns batches
-            dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.bs,
-                                                             num_workers=FLAGS.num_workers)
+            dataloaders[phase] = torch.utils.data.DataLoader(datasets[phase], shuffle=True, batch_size=FLAGS.dummy_batch_size,
+                                                             num_workers=FLAGS.worker_number)
         torch.manual_seed(epoch)
         torch.cuda.manual_seed(epoch)
         np.random.seed(epoch)
@@ -196,7 +192,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
             if phase == 'train':
                 model.train()
             else:
-                if epoch % FLAGS.analysis_freq != 0:
+                if epoch % FLAGS.analysis_frequency != 0:
                     continue
                 model.eval()
 
@@ -207,7 +203,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                 radiances, labels, cloud_mask = sample
 
                 # --- unpack PyTorch batching if dataloader delivers batches already ---
-                if FLAGS.merged:
+                if len(radiances.shape) == 5:
                     radiances = radiances.reshape(-1, *tuple(radiances.shape[2:]))
                     labels = labels.reshape(-1, *tuple(radiances.shape[2:]))
                     cloud_mask = cloud_mask.reshape(-1, *tuple(radiances.shape[2:]))
@@ -256,7 +252,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                             auto_loss = 0
                             if FLAGS.auto_weight > 0:
                                 output_ix = 8 if FLAGS.mask_weight == 0 else 9
-                                auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][output_ix:].float(), radiances[ix][:(FLAGS.nb_classes - output_ix)].float())  # MSE for autoencoder loss
+                                auto_loss = FLAGS.auto_weight * auto_loss_fn(outputs[ix][output_ix:].float(), radiances[ix][:(FLAGS.class_number - output_ix)].float())  # MSE for autoencoder loss
                             loss += (mask_loss + class_loss + auto_loss) / (FLAGS.mask_weight + FLAGS.class_weight + FLAGS.auto_weight)
                         loss /= labeled_mask.shape[0]
 
@@ -270,9 +266,9 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                 cloud_mask = cloud_mask.cpu().detach().numpy()
 
                 # --- save training examples ---
-                if FLAGS.examples and epoch % FLAGS.analysis_freq == 0:
+                if FLAGS.save_examples and epoch % FLAGS.analysis_frequency == 0:
                     if sample_ix == 0:
-                        np.savez(os.path.join(FLAGS.m_path, f'examples/{epoch}_{phase}'),
+                        np.savez(os.path.join(FLAGS.model_path, f'examples/{epoch}_{phase}'),
                                  labels=labels[0], outputs=outputs[0, ...],
                                  cloud_mask=cloud_mask[0])
 
@@ -297,9 +293,9 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                 print(f"Epoch: {epoch} "
                       f"- Loss: {round(running_loss / (sample_ix + 1), 3)} "
                       f"- Class accuracy: {round(class_accuracy, 3)} "
-                      f"- Mask accuracy: {round(mask_accuracy, 3)} - {FLAGS.m_path}")
+                      f"- Mask accuracy: {round(mask_accuracy, 3)} - {FLAGS.model_path}")
 
-                with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
+                with open(os.path.join(FLAGS.model_path, 'metrics.pkl'), 'wb') as f:
                     pkl.dump(metrics, f)
 
             epoch_loss = running_loss / len(datasets[phase])
@@ -323,7 +319,7 @@ def train(model, m_path, datasets, bce_fn, class_loss_fn, auto_loss_fn, optimize
                 torch.save(model.state_dict(), os.path.join(m_path, f'last_model'))
                 model.train()
 
-        with open(os.path.join(FLAGS.m_path, 'metrics.pkl'), 'wb') as f:
+        with open(os.path.join(FLAGS.model_path, 'metrics.pkl'), 'wb') as f:
             pkl.dump(metrics, f)
 
 

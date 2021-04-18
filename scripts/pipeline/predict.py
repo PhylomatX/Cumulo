@@ -7,7 +7,7 @@ import pickle as pkl
 from tqdm import tqdm
 from cumulo.data.loader import CumuloDataset
 from cumulo.utils.visualization import outputs_to_figure_or_file
-from cumulo.utils.training import GlobalNormalizer, LocalNormalizer
+from cumulo.utils.training import GlobalNormalizer
 from cumulo.utils.evaluation import evaluate_file, evaluate_clouds, create_class_histograms
 from cumulo.models.unet import UNet
 from cumulo.models.unet_equi import UNet_equi
@@ -18,10 +18,10 @@ from flags import FLAGS
 
 
 def load_model(model_dir):
-    if FLAGS.model == 'unet':
-        model = UNet(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm)
+    if FLAGS.model in ['unet', 'weak']:
+        model = UNet(in_channels=13, out_channels=FLAGS.class_number, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.normalization)
     elif FLAGS.model == 'equi':
-        model = UNet_equi(in_channels=13, out_channels=FLAGS.nb_classes, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.norm, rot=FLAGS.rot)
+        model = UNet_equi(in_channels=13, out_channels=FLAGS.class_number, starting_filters=32, padding=FLAGS.padding, norm=FLAGS.normalization, rot=FLAGS.rotations)
     elif FLAGS.model == 'iresnet':
         NotImplementedError()
     else:
@@ -35,7 +35,7 @@ def predict_tiles(model, tiles, device, batch_size):
     b_num = math.ceil(tiles.shape[0] / batch_size)
     ix = 0
     output_size = FLAGS.tile_size - 2 * FLAGS.valid_convolution_offset
-    predictions = np.zeros((tiles.shape[0], FLAGS.nb_classes, output_size, output_size))
+    predictions = np.zeros((tiles.shape[0], FLAGS.class_number, output_size, output_size))
     remaining = 0
 
     for b in range(b_num):
@@ -73,14 +73,11 @@ def main(_):
     if not os.path.exists(os.path.join(FLAGS.output_path, 'total')):
         os.makedirs(os.path.join(FLAGS.output_path, 'total'))
 
-    if FLAGS.local_norm:
-        normalizer = LocalNormalizer()
-    else:
-        m = np.load(os.path.join(FLAGS.d_path, "mean.npy"))
-        s = np.load(os.path.join(FLAGS.d_path, "std.npy"))
-        normalizer = GlobalNormalizer(m, s)
+    m = np.load(os.path.join(FLAGS.data_path, "mean.npy"))
+    s = np.load(os.path.join(FLAGS.data_path, "std.npy"))
+    normalizer = GlobalNormalizer(m, s)
     try:
-        test_idx = np.load(os.path.join(FLAGS.m_path, 'test_idx.npy'))
+        test_idx = np.load(os.path.join(FLAGS.model_path, 'test_idx.npy'))
         print(f"Found test set with {len(test_idx)} files.")
     except FileNotFoundError:
         test_idx = None
@@ -91,7 +88,7 @@ def main(_):
         with open(FLAGS.nc_exclude_path, 'rb') as f:
             exclude = pkl.load(f)
 
-    dataset = CumuloDataset(d_path=FLAGS.d_path, normalizer=normalizer, indices=test_idx, prediction_mode=True,
+    dataset = CumuloDataset(d_path=FLAGS.data_path, normalizer=normalizer, indices=test_idx, prediction_mode=True,
                             tile_size=FLAGS.tile_size, valid_convolution_offset=FLAGS.valid_convolution_offset,
                             most_frequent_clouds_as_GT=FLAGS.most_frequent_clouds_as_GT, exclude=exclude)
     print(f"Predicting {FLAGS.prediction_number} files.")
@@ -99,7 +96,7 @@ def main(_):
     device = 'cpu'
     if torch.cuda.is_available():
         device = 'cuda'
-    model = load_model(FLAGS.m_path)
+    model = load_model(FLAGS.model_path)
     model.to(device)
 
     no_cloud_mask_prediction = False
@@ -118,8 +115,8 @@ def main(_):
         filename, radiances, locations, cloud_mask, labels = dataset[ix]
 
         # --- Generate tile predictions and insert them into the swath ---
-        predictions = predict_tiles(model, radiances, device, FLAGS.dataset_bs)
-        outputs = np.ones((FLAGS.nb_classes, *cloud_mask.squeeze().shape)) * -1
+        predictions = predict_tiles(model, radiances, device, FLAGS.batch_size)
+        outputs = np.ones((FLAGS.class_number, *cloud_mask.squeeze().shape)) * -1
         for ix, loc in enumerate(locations):
             outputs[:, loc[0][0]:loc[0][1], loc[1][0]:loc[1][1]] = predictions[ix]
 
@@ -129,7 +126,7 @@ def main(_):
         cloud_mask = cloud_mask.squeeze()[FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset, FLAGS.valid_convolution_offset:-1 - FLAGS.valid_convolution_offset]
 
         if FLAGS.immediate_evaluation:
-            filename = filename.replace(FLAGS.d_path, FLAGS.output_path + f'/').replace('.nc', '.npz')
+            filename = filename.replace(FLAGS.data_path, FLAGS.output_path + f'/').replace('.nc', '.npz')
             report, probabilities, cloudy_labels, eval_outputs = evaluate_file(filename, outputs.copy(), labels.copy(), cloud_mask.copy(), label_names, mask_names, no_cloud_mask_prediction)
 
             # --- Save intermediate report and merge probabilities and labels for total evaluation ---
@@ -145,10 +142,10 @@ def main(_):
                 total_outputs = eval_outputs
             else:
                 total_outputs = np.hstack((total_outputs, eval_outputs))
-            outputs_to_figure_or_file(outputs, labels, cloud_mask, make_cloud_mask_binary=FLAGS.cloud_mask_as_binary,
+            outputs_to_figure_or_file(outputs, labels, cloud_mask, make_cloud_mask_binary=FLAGS.make_cloud_mask_binary,
                                       to_file=FLAGS.to_file, npz_file=filename, no_cloud_mask_prediction=no_cloud_mask_prediction)
         else:
-            np.savez(os.path.join(FLAGS.output_path, filename.replace(FLAGS.d_path, '').replace('.nc', '')),
+            np.savez(os.path.join(FLAGS.output_path, filename.replace(FLAGS.data_path, '').replace('.nc', '')),
                      outputs=outputs, labels=labels, cloud_mask=cloud_mask)
 
     if FLAGS.immediate_evaluation:

@@ -99,7 +99,7 @@ def create_class_histograms(outputs, labels, path):
             _ = axs[i].hist(outputs[labels == label][:, i], bins=100, alpha=0.8, label=i, range=(-20, 20))
             axs[i].set_title(i)
         plt.savefig(os.path.join(path, f'{label}.png'))
-    plt.close()
+        plt.close(fig)
 
 
 def evaluate_cloud_mask(mask_predictions, mask, mask_names, npz_file, detailed=False):
@@ -144,11 +144,13 @@ def evaluate_clouds(probabilities, labels, label_names, npz_file, detailed=False
             pkl.dump(matrix, f)
 
         # --- visualize confusion matrices ---
+        plt.close()
         class_matrix_disp = sm.ConfusionMatrixDisplay(matrix, display_labels=label_names)
         class_matrix_disp.plot(cmap='Reds', values_format='d')
         plt.savefig(npz_file.replace('.npz', '_matrix.png'))
         plt.close()
 
+        plt.close()
         class_matrix_normalized = sm.confusion_matrix(labels, hard_predictions, normalize='true', labels=label_names)
         class_matrix_disp = sm.ConfusionMatrixDisplay(class_matrix_normalized, display_labels=label_names)
         class_matrix_disp.plot(include_values=False, cmap='Reds')

@@ -16,9 +16,12 @@ def main(_):
     training_names = []
     f1_scores = []
     accuracies = []
+    exclude_list = FLAGS.exclude
+    if exclude_list is None:
+        exclude_list = []
     for training in trainings:
         valid = True
-        for exclude in FLAGS.exclude:
+        for exclude in exclude_list:
             if exclude in training:
                 valid = False
         if not valid:

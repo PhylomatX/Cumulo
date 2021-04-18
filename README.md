@@ -27,7 +27,7 @@ This is just a demo and just demonstrates the use of the commands. It does not p
 cd cumulo
 python scripts/preprocessing/filter_artefacts_and_nolabels.py --path ./demo_data --removed_path ./artefacts
 python scripts/preprocessing/calculate_statistics.py --path ./demo_data --tile_number 16
-python scripts/pipeline/train.py --m_path ./models/demo_training --d_path ./demo_data --model unet --epoch_number 5 --nc_exclude_path ./demo_data/no_labels.pkl --demo 
+python scripts/pipeline/train.py --model_path ./models/demo_training --data_path ./demo_data --model unet --epoch_number 5 --nc_exclude_path ./demo_data/no_labels.pkl --demo 
 python scripts/pipeline/predict.py --flagfile ./models/demo_training/flagfile.txt --output_path ./models/demo_training/predictions --prediction_number 2
 ```
 
@@ -55,10 +55,13 @@ All examples assume that this repository is the current folder.
 + #### pipeline
 
     + **train.py**: Can be used to train a model on the CUMULO dataset. All training parameters are given and saved
-    as flags from the abseil library. Example: `python scripts/pipeline/train.py --m_path <train_path> --d_path <data_path> 
-    --model equi --rot 4` to train an equivariant U-Net (4 discrete rotations) on the data at 'data_path' and save 
-    the model and all training information at 'train_path'. Training with the iresnet model is still work-in-progress 
-    and throws an error in evaluation and prediction.
+    as flags from the abseil library. Example: `python scripts/pipeline/train.py --model_path <train_path> --data_path 
+    <data_path> --model equi --rot 4` to train an equivariant U-Net (4 discrete rotations) on the data at 'data_path' 
+    and save the model and all training information at 'train_path'. Training with the iresnet model is still 
+    work-in-progress and throws an error in evaluation and prediction.
+    Set mask_weight = 0 and class_number = 8 if training without cloud mask and only with labeled pixels. Set 
+    auto_weight > 0 and class_number = 22 (1 for cloud mask + 8 for cloud classes + 13 for autoencoder) if 
+    training with additional autoencoder loss.
     
     + **predict.py**: Can be used to generate predictions using a trained model and to evaluate these predictions,
     generating images, ROCs, histograms, evaluation reports and confusion matrices. Example: 
