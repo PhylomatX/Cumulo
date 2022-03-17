@@ -1,7 +1,7 @@
 # CUMULO Project 
 
-This repository was created during the practical course "Creation of Deep Learning Methods" in the winter semester 2021. 
-Its purpose was to use equivariant deep learning architectures to predict cloud types using the CUMULO dataset.
+This repository was created during the practical course "Creation of Deep Learning Methods" in the winter semester 2021 at the Technical University of Munich. 
+Its purpose was to use equivariant deep learning architectures to predict cloud types using the CUMULO dataset. Equivariant deep learning architectures are explained here: https://arxiv.org/abs/1911.08251.
 
 The repository is based on https://github.com/FrontierDevelopmentLab/CUMULO. The U-Net architecture and training script 
 were adapted from https://github.com/LobellLab/weakly_supervised.
@@ -110,7 +110,6 @@ All examples assume that this repository is the current folder.
 As indicated, the IResNet model integration into the trainings pipeline is still work-in-progress. The
 UNets produce worse results than the IResNet results from https://arxiv.org/abs/1911.04227. Therefore,
 the next steps would be to reproduce the IResNet results and understand why it is better in learning
-the cloud classes. Vladimir suggested that implementing an equivariant version of the IResNet may also
-improve the results. 
+the cloud classes. Implementing an equivariant version of the IResNet may also improve the results. 
 
 The equivariant UNet architecture could still be extended with equivariance to mirroring.
